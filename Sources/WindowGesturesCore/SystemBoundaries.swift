@@ -13,7 +13,7 @@ public protocol PermissionChecking {
 public protocol WindowControlling {
     associatedtype Window
 
-    func activeWindow() -> Window?
-    func visibleScreenFrame(for window: Window) -> Rect?
+    func focusedWindow() throws -> Window
+    func visibleScreenFrame(for window: Window) throws -> Rect
     func move(_ window: Window, to frame: Rect) throws
 }

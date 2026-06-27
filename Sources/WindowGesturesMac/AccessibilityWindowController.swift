@@ -7,9 +7,9 @@ public final class AccessibilityWindowController: WindowControlling {
 
     public init() {}
 
-    public func activeWindow() -> AXUIElement? {
+    public func focusedWindow() throws -> AXUIElement {
         guard let app = NSWorkspace.shared.frontmostApplication else {
-            return nil
+            throw WindowMovementError.noFocusedApplication
         }
 
         let applicationElement = AXUIElementCreateApplication(app.processIdentifier)
@@ -21,32 +21,36 @@ public final class AccessibilityWindowController: WindowControlling {
         )
 
         guard result == .success, let window = value else {
-            return firstWindow(in: applicationElement)
+            throw WindowMovementError.noFocusedWindow
+        }
+
+        guard CFGetTypeID(window) == AXUIElementGetTypeID() else {
+            throw WindowMovementError.noFocusedWindow
         }
 
         return (window as! AXUIElement)
     }
 
-    public func visibleScreenFrame(for window: AXUIElement) -> Rect? {
-        let windowFrame = frame(of: window)
+    public func visibleScreenFrame(for window: AXUIElement) throws -> Rect {
+        let windowFrame = try frame(of: window)
         let screens = NSScreen.screens
 
         guard !screens.isEmpty else {
-            return nil
+            throw WindowMovementError.failedToReadWindowFrame
         }
 
-        if let windowFrame {
-            return screens
-                .map { screen in
-                    (screen: screen, visibleFrame: accessibilityVisibleFrame(for: screen))
-                }
-                .max { lhs, rhs in
-                    intersectionArea(lhs.visibleFrame, windowFrame) < intersectionArea(rhs.visibleFrame, windowFrame)
-                }?
-                .visibleFrame
+        guard let visibleFrame = screens
+            .map({ screen in
+                (screen: screen, visibleFrame: accessibilityVisibleFrame(for: screen))
+            })
+            .max(by: { lhs, rhs in
+                intersectionArea(lhs.visibleFrame, windowFrame) < intersectionArea(rhs.visibleFrame, windowFrame)
+            })?
+            .visibleFrame else {
+            throw WindowMovementError.failedToReadWindowFrame
         }
 
-        return NSScreen.main.map(accessibilityVisibleFrame(for:))
+        return visibleFrame
     }
 
     public func move(_ window: AXUIElement, to frame: Rect) throws {
@@ -55,7 +59,27 @@ public final class AccessibilityWindowController: WindowControlling {
 
         guard let positionValue = AXValueCreate(.cgPoint, &position),
               let sizeValue = AXValueCreate(.cgSize, &size) else {
-            throw AccessibilityWindowError.valueCreationFailed
+            throw WindowMovementError.failedToSetWindowFrame
+        }
+
+        var positionSettable = DarwinBoolean(false)
+        let positionSettableResult = AXUIElementIsAttributeSettable(
+            window,
+            kAXPositionAttribute as CFString,
+            &positionSettable
+        )
+        var sizeSettable = DarwinBoolean(false)
+        let sizeSettableResult = AXUIElementIsAttributeSettable(
+            window,
+            kAXSizeAttribute as CFString,
+            &sizeSettable
+        )
+
+        guard positionSettableResult == .success,
+              sizeSettableResult == .success,
+              positionSettable.boolValue,
+              sizeSettable.boolValue else {
+            throw WindowMovementError.unsupportedWindow
         }
 
         let positionResult = AXUIElementSetAttributeValue(
@@ -65,7 +89,7 @@ public final class AccessibilityWindowController: WindowControlling {
         )
 
         guard positionResult == .success else {
-            throw AccessibilityWindowError.axError(positionResult)
+            throw WindowMovementError.failedToSetWindowFrame
         }
 
         let sizeResult = AXUIElementSetAttributeValue(
@@ -75,38 +99,16 @@ public final class AccessibilityWindowController: WindowControlling {
         )
 
         guard sizeResult == .success else {
-            throw AccessibilityWindowError.axError(sizeResult)
+            throw WindowMovementError.failedToSetWindowFrame
         }
     }
-}
-
-public enum AccessibilityWindowError: Error, Equatable {
-    case valueCreationFailed
-    case axError(AXError)
 }
 
 private extension AccessibilityWindowController {
-    func firstWindow(in applicationElement: AXUIElement) -> AXUIElement? {
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            applicationElement,
-            kAXWindowsAttribute as CFString,
-            &value
-        )
-
-        guard result == .success,
-              let windows = value as? [AXUIElement],
-              let window = windows.first else {
-            return nil
-        }
-
-        return window
-    }
-
-    func frame(of window: AXUIElement) -> Rect? {
+    func frame(of window: AXUIElement) throws -> Rect {
         guard let position = pointAttribute(kAXPositionAttribute, of: window),
               let size = sizeAttribute(kAXSizeAttribute, of: window) else {
-            return nil
+            throw WindowMovementError.failedToReadWindowFrame
         }
 
         return Rect(

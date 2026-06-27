@@ -92,13 +92,15 @@ private extension AppDelegate {
         switch result {
         case .moved:
             setStatus("Moved active window")
-        case .permissionDenied:
+        case .failed(.accessibilityPermissionMissing):
             setStatus("Accessibility permission needed")
-        case .noActiveWindow:
+        case .failed(.noFocusedApplication), .failed(.noFocusedWindow):
             setStatus("No active window found")
-        case .visibleScreenUnavailable:
-            setStatus("Could not find visible screen")
-        case .moveFailed:
+        case .failed(.unsupportedWindow):
+            setStatus("Focused window cannot be resized")
+        case .failed(.failedToReadWindowFrame):
+            setStatus("Could not read active window")
+        case .failed(.failedToSetWindowFrame):
             setStatus("Could not move active window")
         }
     }
