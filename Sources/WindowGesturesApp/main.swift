@@ -2,7 +2,7 @@ import AppKit
 import WindowGesturesCore
 import WindowGesturesMac
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let permissionChecker = AccessibilityPermissionChecker()
     private let hotKeyRegistrar = CarbonHotKeyRegistrar()
     private let windowController = AccessibilityWindowController()
@@ -10,6 +10,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyCoordinator: HotKeyCoordinator<CarbonHotKeyRegistrar>?
     private var statusItem: NSStatusItem?
     private let statusMenuItem = NSMenuItem(title: "Starting...", action: nil, keyEquivalent: "")
+    private let accessibilityTrustedMenuItem = NSMenuItem(title: "Accessibility trusted: unknown", action: nil, keyEquivalent: "")
+    private let appBundleIDMenuItem = NSMenuItem(title: "App bundle id: unknown", action: nil, keyEquivalent: "")
+    private let appBundlePathMenuItem = NSMenuItem(title: "App bundle path: unknown", action: nil, keyEquivalent: "")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -41,6 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         hotKeyCoordinator?.stop()
     }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        refreshDebugInfo()
+    }
 }
 
 private extension AppDelegate {
@@ -57,8 +64,15 @@ private extension AppDelegate {
         }
 
         let menu = NSMenu()
+        menu.delegate = self
         statusMenuItem.isEnabled = false
+        accessibilityTrustedMenuItem.isEnabled = false
+        appBundleIDMenuItem.isEnabled = false
+        appBundlePathMenuItem.isEnabled = false
         menu.addItem(statusMenuItem)
+        menu.addItem(accessibilityTrustedMenuItem)
+        menu.addItem(appBundleIDMenuItem)
+        menu.addItem(appBundlePathMenuItem)
         menu.addItem(NSMenuItem.separator())
         let accessibilitySettingsItem = NSMenuItem(
             title: "Open Accessibility Settings",
@@ -106,8 +120,19 @@ private extension AppDelegate {
     }
 
     func setStatus(_ value: String) {
+        refreshDebugInfo()
         statusMenuItem.title = "Status: \(value)"
         statusItem?.button?.toolTip = "WindowGestures - \(value)"
+    }
+
+    func refreshDebugInfo() {
+        let trusted = permissionChecker.hasAccessibilityPermission ? "yes" : "no"
+        let bundleID = Bundle.main.bundleIdentifier ?? "unknown"
+        let bundlePath = Bundle.main.bundleURL.path
+
+        accessibilityTrustedMenuItem.title = "Accessibility trusted: \(trusted)"
+        appBundleIDMenuItem.title = "App bundle id: \(bundleID)"
+        appBundlePathMenuItem.title = "App bundle path: \(bundlePath)"
     }
 
     @objc func openAccessibilitySettings() {
