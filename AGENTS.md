@@ -93,5 +93,18 @@ Required tests:
 
 Before finishing, run:
 
-```bash
 make check
+
+For core-only changes, run:
+
+swift test
+
+## Done means
+
+A task is done only when:
+
+project builds
+tests pass
+hotkeys are documented
+manual test steps are updated
+no private APIs are used
