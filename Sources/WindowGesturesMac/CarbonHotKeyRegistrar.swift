@@ -110,6 +110,10 @@ private extension HotKey {
             return UInt32(kVK_LeftArrow)
         case .rightArrow:
             return UInt32(kVK_RightArrow)
+        case .upArrow:
+            return UInt32(kVK_UpArrow)
+        case .downArrow:
+            return UInt32(kVK_DownArrow)
         }
     }
 

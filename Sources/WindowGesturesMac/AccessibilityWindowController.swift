@@ -53,6 +53,10 @@ public final class AccessibilityWindowController: WindowControlling {
         return visibleFrame
     }
 
+    public func frame(for window: AXUIElement) throws -> Rect {
+        try frame(of: window)
+    }
+
     public func move(_ window: AXUIElement, to frame: Rect) throws {
         var position = CGPoint(x: frame.x, y: frame.y)
         var size = CGSize(width: frame.width, height: frame.height)
@@ -101,6 +105,10 @@ public final class AccessibilityWindowController: WindowControlling {
         guard sizeResult == .success else {
             throw WindowMovementError.failedToSetWindowFrame
         }
+    }
+
+    public func restoreIdentifier(for window: AXUIElement) -> String? {
+        String(CFHash(window))
     }
 }
 

@@ -1,6 +1,6 @@
 # WindowGestures manual test
 
-## v0.1 smoke test checklist
+## v0.2 smoke test checklist
 
 - Confirm the app builds with `make build`.
 - Launch the stable debug copy with `make run-debug`.
@@ -12,11 +12,14 @@
   - `App bundle path: ~/Applications/WindowGestures.app`
 - Confirm Control + Shift + Left Arrow moves the focused window to the left half of the visible screen.
 - Confirm Control + Shift + Right Arrow moves the focused window to the right half of the visible screen.
+- Confirm Control + Shift + Up Arrow maximizes the focused window to the visible screen.
+- Confirm pressing Control + Shift + Up Arrow twice quickly resizes the focused window to a centered vertical third.
+- Confirm Control + Shift + Down Arrow restores the focused window to its previous frame after a snap.
 - Confirm the menu bar and Dock areas are respected.
 - Confirm the app does not crash if Accessibility permission is missing.
 - Confirm the app does not crash when no resizable focused window is available.
 - Confirm `make debug-verify-bundle` reports the running process as `~/Applications/WindowGestures.app/Contents/MacOS/WindowGestures` when the app is running.
-- Confirm the app does not implement gestures, configurable shortcuts, maximize, restore, center, launch at login, notarization, or update behavior.
+- Confirm the app does not implement gestures, configurable shortcuts, launch at login, notarization, or update behavior.
 
 ## Enable Accessibility
 
@@ -29,6 +32,8 @@
 7. Confirm the menu shows `Accessibility trusted: yes`.
 8. Confirm the running process path is `~/Applications/WindowGestures.app/Contents/MacOS/WindowGestures`.
 
+Accessibility trust should survive rebuilds only when the debug app is signed with the stable local certificate `WindowGestures Local Dev`. See `docs/signing.md` if trust flips back to `no` after rebuilding.
+
 ## Test hotkeys
 
 1. Open a normal resizable app window, such as Finder.
@@ -36,6 +41,14 @@
 3. Confirm the active window moves to the left half of the visible screen, staying below the menu bar and clear of the Dock.
 4. Press Control + Shift + Right Arrow.
 5. Confirm the active window moves to the right half of the visible screen, staying below the menu bar and clear of the Dock.
+6. Press Control + Shift + Up Arrow once.
+7. Confirm the active window maximizes to the full visible screen, staying below the menu bar and clear of the Dock.
+8. Press Control + Shift + Up Arrow twice quickly.
+9. Confirm the active window becomes full visible-screen height, one third visible-screen width, and horizontally centered.
+10. Press Control + Shift + Down Arrow.
+11. Confirm the active window restores to the frame it had before the snap.
+12. Press Control + Shift + Up Arrow once, wait more than 400 ms, then press Control + Shift + Up Arrow again.
+13. Confirm each delayed Up press behaves as a single press and maximizes instead of triggering the centered one-third layout.
 
 ## Graceful failure checks
 
@@ -58,13 +71,14 @@ macOS Accessibility permission is tied to a specific app identity and path. Duri
 
 If hotkeys still report `Accessibility permission needed` after permission is enabled:
 
-1. Quit WindowGestures.
-2. Run `tccutil reset Accessibility com.amilabs.WindowGestures`.
-3. Open System Settings > Privacy & Security > Accessibility.
-4. Remove old WindowGestures entries for `local.windowgestures.WindowGestures`.
-5. Remove old WindowGestures entries that point to previous build locations, especially `.build/debug/WindowGestures.app`, `/Users/Shared/SharedWork/Apps/WindowGestures.app`, or `/Applications/WindowGestures.app`.
-6. Re-add `~/Applications/WindowGestures.app`.
-7. Launch again with `make run-debug`.
-8. Confirm the menu shows `Accessibility trusted: yes` and the app bundle path is `~/Applications/WindowGestures.app`.
-9. Confirm the running process path is `~/Applications/WindowGestures.app/Contents/MacOS/WindowGestures`.
-10. Run `make debug-verify-bundle` if System Settings still does not list the app.
+1. Confirm `security find-identity -v -p codesigning` includes `WindowGestures Local Dev`.
+2. Quit WindowGestures.
+3. Run `tccutil reset Accessibility com.amilabs.WindowGestures`.
+4. Open System Settings > Privacy & Security > Accessibility.
+5. Remove old WindowGestures entries for `local.windowgestures.WindowGestures`.
+6. Remove old WindowGestures entries that point to previous build locations, especially `.build/debug/WindowGestures.app`, `/Users/Shared/SharedWork/Apps/WindowGestures.app`, or `/Applications/WindowGestures.app`.
+7. Re-add `~/Applications/WindowGestures.app`.
+8. Launch again with `make run-debug`.
+9. Confirm the menu shows `Accessibility trusted: yes` and the app bundle path is `~/Applications/WindowGestures.app`.
+10. Confirm the running process path is `~/Applications/WindowGestures.app/Contents/MacOS/WindowGestures`.
+11. Run `make debug-verify-bundle` and `make debug-signing-info` if System Settings still does not list the app.

@@ -3,6 +3,7 @@ import Foundation
 public final class HotKeyCoordinator<Registrar: HotKeyRegistering> {
     private let registrar: Registrar
     private let perform: @Sendable (WindowAction) -> WindowCommandResult
+    private let recognizer = HotKeySequenceRecognizer()
 
     public init(
         registrar: Registrar,
@@ -13,8 +14,9 @@ public final class HotKeyCoordinator<Registrar: HotKeyRegistering> {
     }
 
     public func start() throws {
-        try registrar.register(HotKeyMapping.defaultHotKeys) { [perform] hotKey in
-            guard let action = HotKeyMapping.action(for: hotKey) else {
+        try registrar.register(HotKeyMapping.defaultHotKeys) { [perform, recognizer] hotKey in
+            let now = Date().timeIntervalSinceReferenceDate
+            guard let action = recognizer.action(for: hotKey, at: now) else {
                 return
             }
 

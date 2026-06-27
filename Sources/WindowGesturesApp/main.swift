@@ -116,6 +116,8 @@ private extension AppDelegate {
             setStatus("Could not read active window")
         case .failed(.failedToSetWindowFrame):
             setStatus("Could not move active window")
+        case .failed(.noStoredFrame):
+            setStatus("No previous window frame")
         }
     }
 

@@ -6,6 +6,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: false)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrame: Rect(x: 0, y: 0, width: 800, height: 600)
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -20,6 +21,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .failure(.noFocusedApplication),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrame: Rect(x: 0, y: 0, width: 800, height: 600)
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -34,6 +36,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .failure(.noFocusedWindow),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrame: Rect(x: 0, y: 0, width: 800, height: 600)
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -48,6 +51,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrameError: .failedToReadWindowFrame
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -62,6 +66,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrame: Rect(x: 0, y: 0, width: 800, height: 600),
             moveError: .unsupportedWindow
         )
@@ -77,6 +82,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrame: Rect(x: 0, y: 0, width: 800, height: 600),
             moveError: .failedToSetWindowFrame
         )
@@ -92,6 +98,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
             visibleFrame: Rect(x: 0, y: 25, width: 1000, height: 775)
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -100,6 +107,139 @@ final class WindowCommandHandlerTests: XCTestCase {
 
         XCTAssertEqual(result, .moved(Rect(x: 500, y: 25, width: 500, height: 775)))
         XCTAssertEqual(windows.movedFrames, [Rect(x: 500, y: 25, width: 500, height: 775)])
+    }
+
+    func testVerticalMaxCenterThirdMovesActiveWindowToCalculatedFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 25, width: 1200, height: 775)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(.verticalMaxCenterThird)
+
+        XCTAssertEqual(result, .moved(Rect(x: 400, y: 25, width: 400, height: 775)))
+        XCTAssertEqual(windows.movedFrames, [Rect(x: 400, y: 25, width: 400, height: 775)])
+    }
+
+    func testMaximizeMovesActiveWindowToVisibleFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 25, width: 1200, height: 775)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(.maximize)
+
+        XCTAssertEqual(result, .moved(Rect(x: 0, y: 25, width: 1200, height: 775)))
+        XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 25, width: 1200, height: 775)])
+    }
+
+    func testRestoreWithoutStoredFrameDoesNothingGracefully() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .failed(.noStoredFrame))
+        XCTAssertTrue(windows.movedFrames.isEmpty)
+    }
+
+    func testRestoreReturnsWindowToPreviousFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(.leftHalf)
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 0, y: 0, width: 500, height: 800),
+            originalFrame
+        ])
+    }
+
+    func testRestoreAfterMaximizeReturnsWindowToOriginalFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(.maximize)
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 0, y: 0, width: 1000, height: 800),
+            originalFrame
+        ])
+    }
+
+    func testRestoreAfterDoubleUpSequenceReturnsWindowToOriginalFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(.maximize)
+        _ = handler.perform(.verticalMaxCenterThird)
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 0, y: 0, width: 1200, height: 800),
+            Rect(x: 400, y: 0, width: 400, height: 800),
+            originalFrame
+        ])
+    }
+
+    func testRepeatedSnapsDoNotOverwriteOriginalRestoreFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(.leftHalf)
+        _ = handler.perform(.rightHalf)
+        _ = handler.perform(.maximize)
+        _ = handler.perform(.verticalMaxCenterThird)
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 0, y: 0, width: 600, height: 800),
+            Rect(x: 600, y: 0, width: 600, height: 800),
+            Rect(x: 0, y: 0, width: 1200, height: 800),
+            Rect(x: 400, y: 0, width: 400, height: 800),
+            originalFrame
+        ])
     }
 }
 
@@ -113,6 +253,7 @@ private final class MockWindowController: WindowControlling {
     typealias Window = String
 
     let focusedWindowResult: Result<String, WindowMovementError>
+    private(set) var currentFrame: Rect
     let visibleFrame: Rect?
     let visibleFrameError: WindowMovementError?
     let moveError: WindowMovementError?
@@ -120,11 +261,13 @@ private final class MockWindowController: WindowControlling {
 
     init(
         focusedWindowResult: Result<String, WindowMovementError>,
+        currentFrame: Rect,
         visibleFrame: Rect? = nil,
         visibleFrameError: WindowMovementError? = nil,
         moveError: WindowMovementError? = nil
     ) {
         self.focusedWindowResult = focusedWindowResult
+        self.currentFrame = currentFrame
         self.visibleFrame = visibleFrame
         self.visibleFrameError = visibleFrameError
         self.moveError = moveError
@@ -132,6 +275,10 @@ private final class MockWindowController: WindowControlling {
 
     func focusedWindow() throws -> String {
         try focusedWindowResult.get()
+    }
+
+    func frame(for window: String) throws -> Rect {
+        currentFrame
     }
 
     func visibleScreenFrame(for window: String) throws -> Rect {
@@ -152,5 +299,10 @@ private final class MockWindowController: WindowControlling {
         }
 
         movedFrames.append(frame)
+        currentFrame = frame
+    }
+
+    func restoreIdentifier(for window: String) -> String? {
+        window
     }
 }

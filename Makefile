@@ -1,5 +1,6 @@
 APP_NAME := WindowGestures
 BUNDLE_ID := com.amilabs.WindowGestures
+SIGN_IDENTITY ?= WindowGestures Local Dev
 EXECUTABLE_NAME := WindowGesturesApp
 CONFIGURATION ?= debug
 BUILD_DIR := .build/$(CONFIGURATION)
@@ -10,7 +11,7 @@ DEBUG_APP_BUNDLE := $(DEBUG_BUILD_DIR)/$(APP_NAME).app
 INSTALL_APP ?= $(HOME)/Applications/$(APP_NAME).app
 INSTALL_DIR = $(dir $(INSTALL_APP))
 
-.PHONY: test build install-debug run-debug reset-accessibility debug-verify-bundle check clean
+.PHONY: test build check-sign-identity install-debug run-debug reset-accessibility debug-verify-bundle debug-signing-info check clean
 
 test:
 	swift test
@@ -33,7 +34,18 @@ build:
 	/usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :NSPrincipalClass string NSApplication" "$(APP_BUNDLE)/Contents/Info.plist"
 
-install-debug:
+check-sign-identity:
+	@if [ "$(SIGN_IDENTITY)" = "-" ]; then \
+		echo "Using explicit ad-hoc signing identity"; \
+	elif security find-identity -v -p codesigning | grep -F '"$(SIGN_IDENTITY)"' >/dev/null; then \
+		echo "Using signing identity: $(SIGN_IDENTITY)"; \
+	else \
+		echo "Missing valid code signing identity: $(SIGN_IDENTITY)"; \
+		echo "Create a local Code Signing certificate named '$(SIGN_IDENTITY)' or explicitly run with SIGN_IDENTITY=- for ad-hoc signing."; \
+		exit 1; \
+	fi
+
+install-debug: check-sign-identity
 	pkill -x $(EXECUTABLE_NAME) || true
 	pkill -x $(APP_NAME) || true
 	$(MAKE) build CONFIGURATION=debug
@@ -41,7 +53,7 @@ install-debug:
 	rm -rf "$(INSTALL_APP)"
 	ditto "$(DEBUG_APP_BUNDLE)" "$(INSTALL_APP)"
 	chmod +x "$(INSTALL_APP)/Contents/MacOS/$(APP_NAME)"
-	codesign --force --deep --sign - "$(INSTALL_APP)"
+	codesign --force --deep --sign "$(SIGN_IDENTITY)" "$(INSTALL_APP)"
 
 run-debug:
 	$(MAKE) install-debug
@@ -64,6 +76,14 @@ debug-verify-bundle: install-debug
 	codesign -dv --verbose=4 "$(INSTALL_APP)"; \
 	echo "pgrep -af WindowGestures:"; \
 	pgrep -af $(APP_NAME) || true
+
+debug-signing-info:
+	@echo "security find-identity -v -p codesigning:"; \
+	security find-identity -v -p codesigning; \
+	echo "codesign -dv --verbose=4:"; \
+	codesign -dv --verbose=4 "$(INSTALL_APP)"; \
+	echo "codesign --verify --deep --strict --verbose=2:"; \
+	codesign --verify --deep --strict --verbose=2 "$(INSTALL_APP)"
 
 check: test build
 

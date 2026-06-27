@@ -7,6 +7,7 @@ public enum WindowMovementError: Error, Equatable, Sendable {
     case unsupportedWindow
     case failedToReadWindowFrame
     case failedToSetWindowFrame
+    case noStoredFrame
 }
 
 public enum WindowCommandResult: Equatable, Sendable {
@@ -17,6 +18,7 @@ public enum WindowCommandResult: Equatable, Sendable {
 public final class WindowCommandHandler<Permissions: PermissionChecking, Controller: WindowControlling> {
     private let permissions: Permissions
     private let windows: Controller
+    private var restoreFrames: [String: Rect] = [:]
 
     public init(permissions: Permissions, windows: Controller) {
         self.permissions = permissions
@@ -30,6 +32,23 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
 
         do {
             let window = try windows.focusedWindow()
+            let restoreIdentifier = windows.restoreIdentifier(for: window)
+
+            if action == .restore {
+                guard let restoreIdentifier,
+                      let restoreFrame = restoreFrames[restoreIdentifier] else {
+                    return .failed(.noStoredFrame)
+                }
+
+                try windows.move(window, to: restoreFrame)
+                restoreFrames.removeValue(forKey: restoreIdentifier)
+                return .moved(restoreFrame)
+            }
+
+            if let restoreIdentifier, restoreFrames[restoreIdentifier] == nil {
+                restoreFrames[restoreIdentifier] = try windows.frame(for: window)
+            }
+
             let visibleScreenFrame = try windows.visibleScreenFrame(for: window)
             let targetFrame = WindowFrameCalculator.frame(for: action, in: visibleScreenFrame)
             try windows.move(window, to: targetFrame)

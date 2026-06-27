@@ -14,6 +14,8 @@ public protocol WindowControlling {
     associatedtype Window
 
     func focusedWindow() throws -> Window
+    func frame(for window: Window) throws -> Rect
     func visibleScreenFrame(for window: Window) throws -> Rect
     func move(_ window: Window, to frame: Rect) throws
+    func restoreIdentifier(for window: Window) -> String?
 }
