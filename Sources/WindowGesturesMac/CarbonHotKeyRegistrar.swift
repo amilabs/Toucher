@@ -128,6 +128,10 @@ private extension HotKey {
             flags |= UInt32(shiftKey)
         }
 
+        if modifiers.contains(.command) {
+            flags |= UInt32(cmdKey)
+        }
+
         return flags
     }
 }

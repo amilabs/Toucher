@@ -26,6 +26,7 @@ public struct HotKeyModifiers: OptionSet, Equatable, Hashable, Sendable {
 
     public static let control = HotKeyModifiers(rawValue: 1 << 0)
     public static let shift = HotKeyModifiers(rawValue: 1 << 1)
+    public static let command = HotKeyModifiers(rawValue: 1 << 2)
 }
 
 public enum HotKeyMapping {
@@ -49,9 +50,21 @@ public enum HotKeyMapping {
         modifiers: [.control, .shift]
     )
 
+    public static let commandLeftHalfHotKey = HotKey(
+        key: .leftArrow,
+        modifiers: [.control, .shift, .command]
+    )
+
+    public static let commandRightHalfHotKey = HotKey(
+        key: .rightArrow,
+        modifiers: [.control, .shift, .command]
+    )
+
     public static let defaultHotKeys = [
         leftHalfHotKey,
         rightHalfHotKey,
+        commandLeftHalfHotKey,
+        commandRightHalfHotKey,
         doubleUpHotKey,
         restoreHotKey
     ]
@@ -62,11 +75,19 @@ public enum HotKeyMapping {
             return .leftHalf
         case rightHalfHotKey:
             return .rightHalf
+        case commandLeftHalfHotKey:
+            return .leftHalf
+        case commandRightHalfHotKey:
+            return .rightHalf
         case restoreHotKey:
             return .restore
         default:
             return nil
         }
+    }
+
+    public static func screenTarget(for hotKey: HotKey) -> WindowScreenTarget {
+        hotKey.modifiers.contains(.command) ? .next : .current
     }
 }
 

@@ -14,6 +14,20 @@ final class HotKeyMappingTests: XCTestCase {
         XCTAssertEqual(HotKeyMapping.action(for: hotKey), .rightHalf)
     }
 
+    func testCommandControlShiftLeftMapsToLeftHalfOnNextScreen() {
+        let hotKey = HotKey(key: .leftArrow, modifiers: [.control, .shift, .command])
+
+        XCTAssertEqual(HotKeyMapping.action(for: hotKey), .leftHalf)
+        XCTAssertEqual(HotKeyMapping.screenTarget(for: hotKey), .next)
+    }
+
+    func testCommandControlShiftRightMapsToRightHalfOnNextScreen() {
+        let hotKey = HotKey(key: .rightArrow, modifiers: [.control, .shift, .command])
+
+        XCTAssertEqual(HotKeyMapping.action(for: hotKey), .rightHalf)
+        XCTAssertEqual(HotKeyMapping.screenTarget(for: hotKey), .next)
+    }
+
     func testControlShiftDownMapsToRestore() {
         let hotKey = HotKey(key: .downArrow, modifiers: [.control, .shift])
 

@@ -241,6 +241,101 @@ final class WindowCommandHandlerTests: XCTestCase {
             originalFrame
         ])
     }
+
+    func testWithoutCommandUsesCurrentScreen() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let screens = [
+            ScreenFrame(frame: Rect(x: 0, y: 0, width: 1000, height: 800), visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 780)),
+            ScreenFrame(frame: Rect(x: 1000, y: 0, width: 1200, height: 900), visibleFrame: Rect(x: 1000, y: 20, width: 1200, height: 880))
+        ]
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 1100, y: 100, width: 500, height: 400),
+            visibleFrame: screens[1].visibleFrame,
+            screens: screens
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(.leftHalf)
+
+        XCTAssertEqual(result, .moved(Rect(x: 1000, y: 20, width: 600, height: 880)))
+    }
+
+    func testWithCommandAndTwoScreensUsesOtherScreen() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let screens = [
+            ScreenFrame(frame: Rect(x: 0, y: 0, width: 1000, height: 800), visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 780)),
+            ScreenFrame(frame: Rect(x: 1000, y: 0, width: 1200, height: 900), visibleFrame: Rect(x: 1000, y: 20, width: 1200, height: 880))
+        ]
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 1100, y: 100, width: 500, height: 400),
+            visibleFrame: screens[1].visibleFrame,
+            screens: screens
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(.rightHalf, options: WindowCommandOptions(screenTarget: .next))
+
+        XCTAssertEqual(result, .moved(Rect(x: 500, y: 0, width: 500, height: 780)))
+    }
+
+    func testAnimationDisabledUsesImmediateSetFramePath() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(
+            .leftHalf,
+            options: WindowCommandOptions(animated: false, animationDuration: 0.25)
+        )
+
+        XCTAssertEqual(result, .moved(Rect(x: 0, y: 0, width: 500, height: 800)))
+        XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 500, height: 800)])
+        XCTAssertTrue(windows.animatedFrames.isEmpty)
+    }
+
+    func testAnimationEnabledUsesAnimatorPath() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(
+            .rightHalf,
+            options: WindowCommandOptions(animated: true, animationDuration: 0.25)
+        )
+
+        XCTAssertEqual(result, .moved(Rect(x: 500, y: 0, width: 500, height: 800)))
+        XCTAssertTrue(windows.movedFrames.isEmpty)
+        XCTAssertEqual(windows.animatedFrames, [Rect(x: 500, y: 0, width: 500, height: 800)])
+    }
+
+    func testAnimationDurationZeroUsesImmediateSetFramePath() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(
+            .maximize,
+            options: WindowCommandOptions(animated: true, animationDuration: 0)
+        )
+
+        XCTAssertEqual(result, .moved(Rect(x: 0, y: 0, width: 1000, height: 800)))
+        XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 1000, height: 800)])
+        XCTAssertTrue(windows.animatedFrames.isEmpty)
+    }
 }
 
 private struct MockPermissionChecker: PermissionChecking {
@@ -255,20 +350,24 @@ private final class MockWindowController: WindowControlling {
     let focusedWindowResult: Result<String, WindowMovementError>
     private(set) var currentFrame: Rect
     let visibleFrame: Rect?
+    let screenFrames: [ScreenFrame]
     let visibleFrameError: WindowMovementError?
     let moveError: WindowMovementError?
     private(set) var movedFrames: [Rect] = []
+    private(set) var animatedFrames: [Rect] = []
 
     init(
         focusedWindowResult: Result<String, WindowMovementError>,
         currentFrame: Rect,
         visibleFrame: Rect? = nil,
+        screens: [ScreenFrame] = [],
         visibleFrameError: WindowMovementError? = nil,
         moveError: WindowMovementError? = nil
     ) {
         self.focusedWindowResult = focusedWindowResult
         self.currentFrame = currentFrame
         self.visibleFrame = visibleFrame
+        self.screenFrames = screens
         self.visibleFrameError = visibleFrameError
         self.moveError = moveError
     }
@@ -293,12 +392,25 @@ private final class MockWindowController: WindowControlling {
         return visibleFrame
     }
 
+    func screens() throws -> [ScreenFrame] {
+        screenFrames
+    }
+
     func move(_ window: String, to frame: Rect) throws {
         if let moveError {
             throw moveError
         }
 
         movedFrames.append(frame)
+        currentFrame = frame
+    }
+
+    func animatedMove(_ window: String, to frame: Rect, duration: TimeInterval) throws {
+        if let moveError {
+            throw moveError
+        }
+
+        animatedFrames.append(frame)
         currentFrame = frame
     }
 

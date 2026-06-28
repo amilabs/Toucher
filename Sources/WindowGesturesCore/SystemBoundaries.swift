@@ -16,6 +16,21 @@ public protocol WindowControlling {
     func focusedWindow() throws -> Window
     func frame(for window: Window) throws -> Rect
     func visibleScreenFrame(for window: Window) throws -> Rect
+    func screens() throws -> [ScreenFrame]
     func move(_ window: Window, to frame: Rect) throws
+    func animatedMove(_ window: Window, to frame: Rect, duration: TimeInterval) throws
+    func cancelAnimations()
     func restoreIdentifier(for window: Window) -> String?
+}
+
+public extension WindowControlling {
+    func screens() throws -> [ScreenFrame] {
+        []
+    }
+
+    func animatedMove(_ window: Window, to frame: Rect, duration: TimeInterval) throws {
+        try move(window, to: frame)
+    }
+
+    func cancelAnimations() {}
 }

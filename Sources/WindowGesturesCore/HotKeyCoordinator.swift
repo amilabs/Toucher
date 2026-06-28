@@ -2,12 +2,12 @@ import Foundation
 
 public final class HotKeyCoordinator<Registrar: HotKeyRegistering> {
     private let registrar: Registrar
-    private let perform: @Sendable (WindowAction) -> WindowCommandResult
+    private let perform: @Sendable (WindowAction, WindowCommandOptions) -> WindowCommandResult
     private let recognizer = HotKeySequenceRecognizer()
 
     public init(
         registrar: Registrar,
-        perform: @escaping @Sendable (WindowAction) -> WindowCommandResult
+        perform: @escaping @Sendable (WindowAction, WindowCommandOptions) -> WindowCommandResult
     ) {
         self.registrar = registrar
         self.perform = perform
@@ -20,7 +20,10 @@ public final class HotKeyCoordinator<Registrar: HotKeyRegistering> {
                 return
             }
 
-            _ = perform(action)
+            _ = perform(
+                action,
+                WindowCommandOptions(screenTarget: HotKeyMapping.screenTarget(for: hotKey))
+            )
         }
     }
 

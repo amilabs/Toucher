@@ -1,5 +1,5 @@
-APP_NAME := WindowGestures
-BUNDLE_ID := com.amilabs.WindowGestures
+APP_NAME := Toucher
+BUNDLE_ID := com.amilabs.Toucher
 SIGN_IDENTITY ?= WindowGestures Local Dev
 EXECUTABLE_NAME := WindowGesturesApp
 CONFIGURATION ?= debug
@@ -12,7 +12,7 @@ INSTALL_APP ?= $(HOME)/Applications/$(APP_NAME).app
 INSTALL_DIR = $(dir $(INSTALL_APP))
 WINDOWGESTURES_GESTURE_BACKEND ?=
 
-.PHONY: test build check-sign-identity install-debug run-debug reset-accessibility debug-verify-bundle debug-signing-info check clean
+.PHONY: test build check-sign-identity install-debug run-debug reset-accessibility debug-verify-bundle debug-signing-info debug-cpu-note check clean
 
 test:
 	swift test
@@ -29,7 +29,7 @@ build:
 	/usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $(BUNDLE_ID)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $(APP_NAME)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$(APP_BUNDLE)/Contents/Info.plist"
-	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.1.0" "$(APP_BUNDLE)/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.5.2" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$(APP_BUNDLE)/Contents/Info.plist"
@@ -48,6 +48,7 @@ check-sign-identity:
 
 install-debug: check-sign-identity
 	pkill -x $(EXECUTABLE_NAME) || true
+	pkill -x WindowGestures || true
 	pkill -x $(APP_NAME) || true
 	$(MAKE) build CONFIGURATION=debug
 	mkdir -p "$(INSTALL_DIR)"
@@ -68,7 +69,7 @@ run-debug:
 reset-accessibility:
 	@echo "App bundle id: $(BUNDLE_ID)"; \
 	tccutil reset Accessibility "$(BUNDLE_ID)"; \
-	echo "If WindowGestures still appears stale, remove and re-add $(INSTALL_APP) in System Settings > Privacy & Security > Accessibility."
+	echo "If Toucher still appears stale, remove and re-add $(INSTALL_APP) in System Settings > Privacy & Security > Accessibility."
 
 debug-verify-bundle: install-debug
 	@echo "defaults read $(INSTALL_APP)/Contents/Info:"; \
@@ -79,7 +80,7 @@ debug-verify-bundle: install-debug
 	/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$(INSTALL_APP)/Contents/Info.plist"; \
 	echo "codesign -dv --verbose=4:"; \
 	codesign -dv --verbose=4 "$(INSTALL_APP)"; \
-	echo "pgrep -af WindowGestures:"; \
+	echo "pgrep -af Toucher:"; \
 	pgrep -af $(APP_NAME) || true
 
 debug-signing-info:
@@ -89,6 +90,10 @@ debug-signing-info:
 	codesign -dv --verbose=4 "$(INSTALL_APP)"; \
 	echo "codesign --verify --deep --strict --verbose=2:"; \
 	codesign --verify --deep --strict --verbose=2 "$(INSTALL_APP)"
+
+debug-cpu-note:
+	@echo "Check Toucher idle CPU in Activity Monitor, or run:"; \
+	echo 'top -pid $$(pgrep -x Toucher)'
 
 check: test build
 

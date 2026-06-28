@@ -25,7 +25,7 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
         self.windows = windows
     }
 
-    public func perform(_ action: WindowAction) -> WindowCommandResult {
+    public func perform(_ action: WindowAction, options: WindowCommandOptions = WindowCommandOptions()) -> WindowCommandResult {
         guard permissions.hasAccessibilityPermission else {
             return .failed(.accessibilityPermissionMissing)
         }
@@ -40,23 +40,59 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
                     return .failed(.noStoredFrame)
                 }
 
-                try windows.move(window, to: restoreFrame)
-                restoreFrames.removeValue(forKey: restoreIdentifier)
-                return .moved(restoreFrame)
+            try move(window, to: restoreFrame, options: options)
+            restoreFrames.removeValue(forKey: restoreIdentifier)
+            return .moved(restoreFrame)
             }
 
             if let restoreIdentifier, restoreFrames[restoreIdentifier] == nil {
                 restoreFrames[restoreIdentifier] = try windows.frame(for: window)
             }
 
-            let visibleScreenFrame = try windows.visibleScreenFrame(for: window)
+            let windowFrame = try windows.frame(for: window)
+            let visibleScreenFrame = try targetVisibleScreenFrame(
+                for: window,
+                windowFrame: windowFrame,
+                screenTarget: options.screenTarget
+            )
             let targetFrame = WindowFrameCalculator.frame(for: action, in: visibleScreenFrame)
-            try windows.move(window, to: targetFrame)
+            try move(window, to: targetFrame, options: options)
             return .moved(targetFrame)
         } catch let error as WindowMovementError {
             return .failed(error)
         } catch {
             return .failed(.failedToSetWindowFrame)
         }
+    }
+
+    private func targetVisibleScreenFrame(
+        for window: Controller.Window,
+        windowFrame: Rect,
+        screenTarget: WindowScreenTarget
+    ) throws -> Rect {
+        let screens = try windows.screens()
+        if let selectedFrame = ScreenSelector.targetVisibleFrame(
+            for: windowFrame,
+            screens: screens,
+            target: screenTarget
+        ) {
+            return selectedFrame
+        }
+
+        return try windows.visibleScreenFrame(for: window)
+    }
+
+    private func move(
+        _ window: Controller.Window,
+        to frame: Rect,
+        options: WindowCommandOptions
+    ) throws {
+        if options.animated,
+           options.animationDuration > 0 {
+            try windows.animatedMove(window, to: frame, duration: options.animationDuration)
+            return
+        }
+
+        try windows.move(window, to: frame)
     }
 }
