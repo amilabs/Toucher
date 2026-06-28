@@ -31,6 +31,40 @@ public enum RawGestureRecognitionResult: Equatable, Sendable {
     case ignored(RawGestureIgnoredReason)
 }
 
+public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
+    public var minHorizontalDistance: Double
+    public var dominanceRatio: Double
+    public var maxGestureDuration: TimeInterval
+    public var cooldown: TimeInterval
+    public var lastGestureDuration: TimeInterval?
+    public var lastGestureStartTimestamp: TimeInterval?
+    public var lastGestureEndTimestamp: TimeInterval?
+    public var lastGestureAccepted: Bool?
+    public var lastRejectionReason: RawGestureIgnoredReason?
+
+    public init(
+        minHorizontalDistance: Double,
+        dominanceRatio: Double,
+        maxGestureDuration: TimeInterval,
+        cooldown: TimeInterval,
+        lastGestureDuration: TimeInterval? = nil,
+        lastGestureStartTimestamp: TimeInterval? = nil,
+        lastGestureEndTimestamp: TimeInterval? = nil,
+        lastGestureAccepted: Bool? = nil,
+        lastRejectionReason: RawGestureIgnoredReason? = nil
+    ) {
+        self.minHorizontalDistance = minHorizontalDistance
+        self.dominanceRatio = dominanceRatio
+        self.maxGestureDuration = maxGestureDuration
+        self.cooldown = cooldown
+        self.lastGestureDuration = lastGestureDuration
+        self.lastGestureStartTimestamp = lastGestureStartTimestamp
+        self.lastGestureEndTimestamp = lastGestureEndTimestamp
+        self.lastGestureAccepted = lastGestureAccepted
+        self.lastRejectionReason = lastRejectionReason
+    }
+}
+
 public final class RawThreeFingerSwipeRecognizer {
     private struct TrackingGesture {
         var startX: Double
@@ -44,13 +78,14 @@ public final class RawThreeFingerSwipeRecognizer {
         case completed
     }
 
-    private let minHorizontalDistance: Double
-    private let dominanceRatio: Double
-    private let maxGestureDuration: TimeInterval
-    private let cooldown: TimeInterval
-    private let invertDirection: Bool
+    public let minHorizontalDistance: Double
+    public let dominanceRatio: Double
+    public let maxGestureDuration: TimeInterval
+    public let cooldown: TimeInterval
+    public let invertDirection: Bool
     private var state = State.idle
     private var lastTriggerTimestamp: TimeInterval?
+    public private(set) var diagnostics: RawGestureDiagnosticSnapshot
 
     public init(
         minHorizontalDistance: Double = 0.08,
@@ -64,6 +99,12 @@ public final class RawThreeFingerSwipeRecognizer {
         self.maxGestureDuration = maxGestureDuration
         self.cooldown = cooldown
         self.invertDirection = invertDirection
+        self.diagnostics = RawGestureDiagnosticSnapshot(
+            minHorizontalDistance: minHorizontalDistance,
+            dominanceRatio: dominanceRatio,
+            maxGestureDuration: maxGestureDuration,
+            cooldown: cooldown
+        )
     }
 
     public func recognize(_ sample: RawTouchSample) -> RawGestureRecognitionResult {
@@ -76,6 +117,7 @@ public final class RawThreeFingerSwipeRecognizer {
                 reason = .fingerCountChanged
             }
             state = .idle
+            recordRejected(reason, startTimestamp: nil, endTimestamp: sample.timestamp)
             return .ignored(reason)
         }
 
@@ -93,12 +135,18 @@ public final class RawThreeFingerSwipeRecognizer {
                     startTimestamp: sample.timestamp
                 )
             )
+            diagnostics.lastGestureStartTimestamp = sample.timestamp
+            diagnostics.lastGestureEndTimestamp = nil
+            diagnostics.lastGestureDuration = nil
+            diagnostics.lastGestureAccepted = nil
+            diagnostics.lastRejectionReason = nil
             return .ignored(.tracking)
 
         case .tracking(let gesture):
             let duration = sample.timestamp - gesture.startTimestamp
             guard duration <= maxGestureDuration else {
                 state = .completed
+                recordRejected(.tooSlow, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.tooSlow)
             }
 
@@ -109,27 +157,33 @@ public final class RawThreeFingerSwipeRecognizer {
 
             guard absX >= minHorizontalDistance else {
                 if absY >= minHorizontalDistance {
+                    recordRejected(.vertical, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                     return .ignored(.vertical)
                 }
 
+                recordRejected(.belowThreshold, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.belowThreshold)
             }
 
             guard absX >= absY * dominanceRatio else {
+                recordRejected(.diagonal, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.diagonal)
             }
 
             guard !isCoolingDown(at: sample.timestamp) else {
                 state = .completed
+                recordRejected(.cooldown, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.cooldown)
             }
 
             lastTriggerTimestamp = sample.timestamp
             state = .completed
+            recordAccepted(startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
             let isRightSwipe = invertDirection ? deltaX < 0 : deltaX > 0
             return .action(isRightSwipe ? .rightHalf : .leftHalf)
 
         case .completed:
+            recordRejected(.alreadyTriggered, startTimestamp: nil, endTimestamp: sample.timestamp)
             return .ignored(.alreadyTriggered)
         }
     }
@@ -140,5 +194,27 @@ public final class RawThreeFingerSwipeRecognizer {
         }
 
         return timestamp - lastTriggerTimestamp < cooldown
+    }
+
+    private func recordAccepted(startTimestamp: TimeInterval, endTimestamp: TimeInterval) {
+        diagnostics.lastGestureStartTimestamp = startTimestamp
+        diagnostics.lastGestureEndTimestamp = endTimestamp
+        diagnostics.lastGestureDuration = endTimestamp - startTimestamp
+        diagnostics.lastGestureAccepted = true
+        diagnostics.lastRejectionReason = nil
+    }
+
+    private func recordRejected(
+        _ reason: RawGestureIgnoredReason,
+        startTimestamp: TimeInterval?,
+        endTimestamp: TimeInterval
+    ) {
+        diagnostics.lastGestureStartTimestamp = startTimestamp ?? diagnostics.lastGestureStartTimestamp
+        diagnostics.lastGestureEndTimestamp = endTimestamp
+        if let startTimestamp = diagnostics.lastGestureStartTimestamp {
+            diagnostics.lastGestureDuration = endTimestamp - startTimestamp
+        }
+        diagnostics.lastGestureAccepted = false
+        diagnostics.lastRejectionReason = reason
     }
 }

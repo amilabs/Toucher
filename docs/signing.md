@@ -1,10 +1,14 @@
-# WindowGestures local signing
+# Toucher local signing
 
-macOS Accessibility/TCC trust is sensitive to the app's code identity. Ad-hoc signing is useful for quick experiments, but it is unstable for local Accessibility development because each rebuild can look like a different app to TCC even when the bundle id and path stay the same.
+macOS Accessibility/TCC trust is sensitive to the app's code identity. Ad-hoc signing is useful for quick experiments, but it is unstable for local Accessibility development because each rebuild can look like a different app to TCC.
 
-For local debug builds, sign WindowGestures with a stable local Code Signing certificate named:
+For local debug builds, sign Toucher with a stable local Code Signing certificate. The current Makefile default is:
 
 `WindowGestures Local Dev`
+
+The certificate name is intentionally unchanged for now to avoid requiring a new local signing identity. The app identity is controlled by the bundle id:
+
+`com.amilabs.Toucher`
 
 ## Create the certificate
 
@@ -14,7 +18,6 @@ For local debug builds, sign WindowGestures with a stable local Code Signing cer
 4. Set Identity Type to `Self Signed Root`.
 5. Set Certificate Type to `Code Signing`.
 6. Create the certificate in your login keychain.
-7. If macOS asks for trust settings, keep the default settings unless signing fails.
 
 Confirm the identity is available:
 
@@ -22,25 +25,17 @@ Confirm the identity is available:
 security find-identity -v -p codesigning
 ```
 
-The output must list `WindowGestures Local Dev` as a valid identity. If it reports `0 valid identities found`, `make run-debug` will fail until the certificate exists and is trusted for code signing.
-
 ## Install and run debug
-
-Run:
 
 ```bash
 make run-debug
 ```
 
-This installs the debug app to:
+This installs and signs:
 
-`~/Applications/WindowGestures.app`
+`~/Applications/Toucher.app`
 
-and signs it with:
-
-`WindowGestures Local Dev`
-
-To intentionally use ad-hoc signing for a one-off debug run, pass it explicitly:
+To intentionally use ad-hoc signing for a one-off debug run:
 
 ```bash
 make run-debug SIGN_IDENTITY=-
@@ -48,26 +43,28 @@ make run-debug SIGN_IDENTITY=-
 
 Do not use ad-hoc signing for normal Accessibility/TCC testing.
 
-## Reset Accessibility once
+## Reset Accessibility after rename
 
-After switching from ad-hoc signing or changing the local certificate, reset TCC once:
+The v0.5 rename changes the bundle id from `com.amilabs.WindowGestures` to:
+
+`com.amilabs.Toucher`
+
+Reset TCC once:
 
 ```bash
-tccutil reset Accessibility com.amilabs.WindowGestures
+tccutil reset Accessibility com.amilabs.Toucher
 ```
 
-Then open System Settings > Privacy & Security > Accessibility, remove stale WindowGestures entries, and re-add:
+Then open System Settings > Privacy & Security > Accessibility:
 
-`~/Applications/WindowGestures.app`
-
-After that, Accessibility trust should survive rebuilds as long as the bundle id, app path, and signing identity remain stable.
+1. Remove old WindowGestures entries.
+2. Remove entries pointing to `.build/debug/WindowGestures.app`, `/Applications/WindowGestures.app`, or `~/Applications/WindowGestures.app`.
+3. Add `~/Applications/Toucher.app`.
+4. Quit and reopen Toucher.
 
 ## Inspect signing
 
-Run:
-
 ```bash
 make debug-signing-info
+make debug-verify-bundle
 ```
-
-It prints available code signing identities, the installed app's signing details, and strict codesign verification.

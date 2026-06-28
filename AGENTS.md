@@ -1,18 +1,24 @@
 # AGENTS.md
 
-## Current MVP
+## Current Baseline
 
-Build a small macOS menu bar app for personal/public non-App-Store distribution.
+Toucher is a small macOS menu bar app for personal/public non-App-Store distribution.
 
-v1 supports only two global hotkeys:
+v0.5 supports:
 
-- Control + Shift + Left Arrow -> move active window to left half of visible screen
-- Control + Shift + Right Arrow -> move active window to right half of visible screen
+- Control + Shift + Left Arrow -> left half of current visible screen
+- Control + Shift + Right Arrow -> right half of current visible screen
+- Control + Shift + Up Arrow -> maximize on current visible screen
+- Control + Shift + Double Up -> full-height centered one-third width
+- Control + Shift + Down Arrow -> restore previous frame
+- Three-finger raw multitouch swipe left/right -> left/right half
+- Command modifier with left/right hotkey or gesture -> target other/next screen
 
-No gestures in v1.
-No App Store support in v1.
-No sandbox requirement in v1.
-No auto-updater in v1.
+No App Store support.
+No sandbox requirement.
+No auto-updater.
+No launch at login.
+No notarization yet.
 
 ## Architecture
 
@@ -23,6 +29,7 @@ Keep the app split into these layers:
   - no AppKit
   - no Accessibility API
   - no Carbon
+  - no private MultitouchSupport calls
   - no CoreGraphics event taps
 
 - WindowGesturesMac
@@ -30,81 +37,113 @@ Keep the app split into these layers:
   - Accessibility API
   - hotkey registration
   - active-window detection
+  - raw MultitouchSupport backend isolated in `RawMultitouchBackend.swift`
 
 - WindowGesturesApp
   - menu bar app
   - permissions UI
+  - settings and diagnostics windows
   - app lifecycle
 
-## Required abstractions
+## Required Abstractions
 
 Use protocols for system boundaries:
 
 - HotKeyRegistering
 - PermissionChecking
 - WindowControlling
+- GestureMonitoring
 
 Core logic must be testable without real macOS permissions.
 
-## Hotkey rules
+## Gesture Rules
 
-For v1, register these shortcuts:
+Raw multitouch is the primary gesture backend for v0.5.
 
-- Control + Shift + Left Arrow
-- Control + Shift + Right Arrow
+Private `MultitouchSupport.framework` usage is allowed because Toucher is not for the App Store, but all private API calls must remain isolated in `WindowGesturesMac/RawMultitouchBackend.swift` or a small dedicated adapter folder.
 
-Prefer RegisterEventHotKey for v1.
+Public NSEvent gesture diagnostics should stay available but must not run in normal idle mode unless selected or diagnostics explicitly enable them.
 
-Do not use CGEventTap unless absolutely necessary.
+Do not use CGEventTap unless explicitly requested.
 Do not record arbitrary keyboard input.
 Do not implement key logging.
-Do not use private APIs.
 
-## Window rules
+## Window Rules
 
 Use the visible screen frame, not the full display frame.
 Account for menu bar and Dock.
 
-If the active window cannot be controlled, fail gracefully and show a menu bar status message or log.
+Default snapping must stay on the active window's current screen.
+Screen selection should prefer the screen containing the window center, then largest intersection, then fallback only as a last resort.
+
+If the active window cannot be controlled, fail gracefully and show a menu status message or diagnostic state.
 
 ## Permissions
 
 The app must check Accessibility permission before trying to move windows.
 
 If permission is missing:
+
 - do not crash
 - show a clear status
-- provide an "Open Accessibility Settings" action
+- provide an `Open Accessibility Settings` action
+
+## CPU
+
+No polling.
+No spin loops.
+No timers while idle except OS callbacks.
+Diagnostics UI updates should be throttled and only run while the diagnostics window is open.
 
 ## Tests
 
-Every change to behavior must include tests.
+Every behavior change must include tests.
 
-Required tests:
-- Control + Shift + Left maps to leftHalf
-- Control + Shift + Right maps to rightHalf
-- leftHalf frame calculation
-- rightHalf frame calculation
-- visible screen frame is used
-- permission denied path does not crash
-- no action is executed if no active window exists
+Required areas:
+
+- hotkey mapping
+- raw gesture recognition
+- screen selection
+- restore behavior
+- permission denied/no active window paths
+- animation planning
 
 ## Commands
 
-Before finishing, run:
+Before finishing:
 
+```bash
 make check
+```
 
-For core-only changes, run:
+For core-only changes:
 
+```bash
 swift test
+```
 
-## Done means
+## Git Workflow
 
-A task is done only when:
+Do not commit or push without explicit user request.
 
-project builds
-tests pass
-hotkeys are documented
-manual test steps are updated
-no private APIs are used
+For git operations, Codex should ask for approval once for the whole git batch, not once per individual git command. After approval, run git commands in one shell block where possible.
+
+Typical approved batch:
+
+```bash
+git status
+git add ...
+git commit ...
+git pull --rebase origin main
+git push
+```
+
+If the Codex client/tooling enforces per-command approval, group commands into one script block where allowed.
+
+Never commit:
+
+- `.build/`
+- `*.app`
+- `.DS_Store`
+- derived data
+- logs

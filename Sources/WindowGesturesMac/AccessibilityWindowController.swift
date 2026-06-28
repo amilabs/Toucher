@@ -33,24 +33,31 @@ public final class AccessibilityWindowController: WindowControlling {
 
     public func visibleScreenFrame(for window: AXUIElement) throws -> Rect {
         let windowFrame = try frame(of: window)
-        let screens = NSScreen.screens
+        let screenFrames = try screens()
 
-        guard !screens.isEmpty else {
-            throw WindowMovementError.failedToReadWindowFrame
-        }
-
-        guard let visibleFrame = screens
-            .map({ screen in
-                (screen: screen, visibleFrame: accessibilityVisibleFrame(for: screen))
-            })
-            .max(by: { lhs, rhs in
-                intersectionArea(lhs.visibleFrame, windowFrame) < intersectionArea(rhs.visibleFrame, windowFrame)
-            })?
-            .visibleFrame else {
+        guard let visibleFrame = ScreenSelector.targetVisibleFrame(
+            for: windowFrame,
+            screens: screenFrames,
+            target: .current
+        ) else {
             throw WindowMovementError.failedToReadWindowFrame
         }
 
         return visibleFrame
+    }
+
+    public func screens() throws -> [ScreenFrame] {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else {
+            throw WindowMovementError.failedToReadWindowFrame
+        }
+
+        return screens.map { screen in
+            ScreenFrame(
+                frame: accessibilityFrame(for: screen),
+                visibleFrame: accessibilityVisibleFrame(for: screen)
+            )
+        }
     }
 
     public func frame(for window: AXUIElement) throws -> Rect {
@@ -160,23 +167,30 @@ private extension AccessibilityWindowController {
     }
 
     func accessibilityVisibleFrame(for screen: NSScreen) -> Rect {
-        let screenFrame = screen.frame
         let visibleFrame = screen.visibleFrame
+        let globalMaxY = globalScreenMaxY()
 
         return Rect(
             x: visibleFrame.minX,
-            y: screenFrame.maxY - visibleFrame.maxY,
+            y: globalMaxY - visibleFrame.maxY,
             width: visibleFrame.width,
             height: visibleFrame.height
         )
     }
 
-    func intersectionArea(_ lhs: Rect, _ rhs: Rect) -> Double {
-        let minX = max(lhs.x, rhs.x)
-        let minY = max(lhs.y, rhs.y)
-        let maxX = min(lhs.x + lhs.width, rhs.x + rhs.width)
-        let maxY = min(lhs.y + lhs.height, rhs.y + rhs.height)
+    func accessibilityFrame(for screen: NSScreen) -> Rect {
+        let screenFrame = screen.frame
+        let globalMaxY = globalScreenMaxY()
 
-        return max(0, maxX - minX) * max(0, maxY - minY)
+        return Rect(
+            x: screenFrame.minX,
+            y: globalMaxY - screenFrame.maxY,
+            width: screenFrame.width,
+            height: screenFrame.height
+        )
+    }
+
+    func globalScreenMaxY() -> CGFloat {
+        NSScreen.screens.map(\.frame.maxY).max() ?? NSScreen.main?.frame.maxY ?? 0
     }
 }
