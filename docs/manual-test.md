@@ -19,7 +19,7 @@
 - Confirm the app does not crash if Accessibility permission is missing.
 - Confirm the app does not crash when no resizable focused window is available.
 - Confirm `make debug-verify-bundle` reports the running process as `~/Applications/WindowGestures.app/Contents/MacOS/WindowGestures` when the app is running.
-- Confirm the app does not implement gestures, configurable shortcuts, launch at login, notarization, or update behavior.
+- Confirm the app does not implement configurable shortcuts, launch at login, notarization, or update behavior.
 
 ## Enable Accessibility
 
@@ -82,3 +82,120 @@ If hotkeys still report `Accessibility permission needed` after permission is en
 9. Confirm the menu shows `Accessibility trusted: yes` and the app bundle path is `~/Applications/WindowGestures.app`.
 10. Confirm the running process path is `~/Applications/WindowGestures.app/Contents/MacOS/WindowGestures`.
 11. Run `make debug-verify-bundle` and `make debug-signing-info` if System Settings still does not list the app.
+
+## v0.3a gesture test
+
+Before testing gestures:
+
+1. Quit BetterTouchTool or disable its 3 Finger Swipe Left/Right triggers.
+2. Disable conflicting macOS Trackpad > More Gestures actions.
+3. Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
+
+Test:
+
+1. Run `make run-debug`.
+2. Open the WindowGestures menu.
+3. Confirm the menu shows:
+   - `Accessibility trusted: yes`
+   - `App bundle id: com.amilabs.WindowGestures`
+   - `Gesture monitor: active`
+4. Open TextEdit.
+5. Make TextEdit active.
+6. Swipe three fingers left.
+7. Confirm the TextEdit window moves to the left half of the visible screen.
+8. Swipe three fingers right.
+9. Confirm the TextEdit window moves to the right half of the visible screen.
+10. If nothing happens, open the WindowGestures menu and record:
+    - `Last gesture event`
+    - raw `dx` / `dy`
+    - `Last gesture ignored reason`
+
+Troubleshooting:
+
+- If `Last gesture event` stays `none`, macOS, BetterTouchTool, or system gesture settings are consuming the gesture, or the public NSEvent swipe API is insufficient on this device/settings combination.
+- If raw `dx` / `dy` appears but the action is ignored, adjust the threshold or horizontal dominance in `HorizontalSwipeRecognizer`.
+- If the action is reversed, invert the public swipe direction mapping in `HorizontalSwipeRecognizer` initialization.
+- If hotkeys work but gestures do not, window control is working and gesture input is the problem.
+
+## v0.3b gesture diagnostics probe
+
+Use this when the menu shows:
+
+- `Gesture backend: public NSEvent swipe`
+- `Gesture monitor: active`
+- `Last gesture event: none`
+- `Last gesture ignored reason: noEventReceived`
+
+### Test A: normal menu bar mode
+
+1. Quit BetterTouchTool.
+2. Disable conflicting macOS Trackpad > More Gestures actions.
+3. Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
+4. Run `make run-debug`.
+5. Open the WindowGestures menu and confirm:
+   - `Gesture probe: inactive`
+   - `Gesture monitor: active`
+6. Perform three-finger swipe left and right.
+7. Open the WindowGestures menu and record:
+   - `Last public event type`
+   - `Last public event timestamp`
+   - `Last public event dx/dy`
+   - `Last scroll deltaX/deltaY`
+   - `Last scroll scrollingDeltaX/scrollingDeltaY`
+   - `Accumulated scroll dx/dy`
+   - `Last scroll precise`
+   - `Last scroll direction inverted`
+   - `Last public event phase`
+   - `Last public event momentumPhase`
+   - `Event counters`
+
+### Test B: local probe window
+
+1. Choose `Open Gesture Probe Window` from the WindowGestures menu.
+2. Make the probe window frontmost.
+3. Perform three-finger swipe left and right over the probe window.
+4. Record the same public event fields and counters shown in the probe window or menu.
+
+### Interpretation
+
+- If all counters stay zero, public `NSEvent` cannot see this gesture in this configuration.
+- If the local probe window sees events but the global monitor does not, public global monitoring is insufficient for background gestures.
+- If `scrollWheel` events arrive but `swipe` does not, three-finger swipe may be exposed differently or only as scroll-like movement. Use `scrollingDeltaX/scrollingDeltaY`, precision, direction inversion, and accumulated dx/dy to evaluate that path before mapping any scrollWheel action.
+- If public events never arrive, the next step is `RawMultitouchBackend`.
+
+## v0.4 raw multitouch test
+
+Before testing:
+
+1. Quit BetterTouchTool.
+2. Disable conflicting macOS Trackpad > More Gestures actions.
+3. Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
+
+Test:
+
+1. Run `make run-debug`.
+2. Open the WindowGestures menu.
+3. Confirm the menu shows:
+   - `Accessibility trusted: yes`
+   - `Gesture backend: raw multitouch`
+   - `Raw multitouch active: yes`
+4. Open TextEdit.
+5. Make TextEdit active.
+6. Swipe exactly three fingers left.
+7. Confirm the TextEdit window moves to the left half of the visible screen.
+8. Swipe exactly three fingers right.
+9. Confirm the TextEdit window moves to the right half of the visible screen.
+10. Try two fingers left and right.
+11. Confirm the window does not move.
+12. Try four fingers left and right.
+13. Confirm the window does not move.
+
+If raw multitouch does not start:
+
+1. Record:
+   - `Raw multitouch available`
+   - `Raw multitouch active`
+   - `Raw devices found`
+   - `Last raw error`
+2. Force the public backend with `WINDOWGESTURES_GESTURE_BACKEND=public make run-debug`.
+3. Disable gestures with `WINDOWGESTURES_GESTURE_BACKEND=off make run-debug`.

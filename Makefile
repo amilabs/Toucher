@@ -10,6 +10,7 @@ DEBUG_BUILD_DIR := .build/debug
 DEBUG_APP_BUNDLE := $(DEBUG_BUILD_DIR)/$(APP_NAME).app
 INSTALL_APP ?= $(HOME)/Applications/$(APP_NAME).app
 INSTALL_DIR = $(dir $(INSTALL_APP))
+WINDOWGESTURES_GESTURE_BACKEND ?=
 
 .PHONY: test build check-sign-identity install-debug run-debug reset-accessibility debug-verify-bundle debug-signing-info check clean
 
@@ -57,7 +58,11 @@ install-debug: check-sign-identity
 
 run-debug:
 	$(MAKE) install-debug
-	open "$(INSTALL_APP)"
+	@if [ -n "$(WINDOWGESTURES_GESTURE_BACKEND)" ]; then \
+		open --env WINDOWGESTURES_GESTURE_BACKEND="$(WINDOWGESTURES_GESTURE_BACKEND)" "$(INSTALL_APP)"; \
+	else \
+		open "$(INSTALL_APP)"; \
+	fi
 	pgrep -af $(APP_NAME) || true
 
 reset-accessibility:
