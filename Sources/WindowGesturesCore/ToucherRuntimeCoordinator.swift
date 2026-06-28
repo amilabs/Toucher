@@ -23,7 +23,7 @@ public struct ToucherSettingsSnapshot: Equatable, Sendable {
         enableDiagnostics: Bool = false,
         invertGestureDirection: Bool = false,
         animationEnabled: Bool = false,
-        animationDuration: TimeInterval = 0.25,
+        animationDuration: TimeInterval = 0.30,
         rawMinDistance: Double = 0.08,
         rawDominanceRatio: Double = 2.0,
         rawCooldown: TimeInterval = 0.35
@@ -101,6 +101,12 @@ public final class ToucherRuntimeCoordinator<ActionHandler: WindowActionHandling
         settings.animationEnabled = isEnabled
     }
 
+    public var movementMode: WindowMovementMode {
+        settings.animationEnabled && settings.animationDuration > 0
+            ? .animated(duration: settings.animationDuration)
+            : .immediate
+    }
+
     @discardableResult
     public func handleAction(
         _ action: WindowAction,
@@ -114,8 +120,7 @@ public final class ToucherRuntimeCoordinator<ActionHandler: WindowActionHandling
             action,
             options: WindowCommandOptions(
                 screenTarget: screenTarget,
-                animated: settings.animationEnabled,
-                animationDuration: settings.animationDuration
+                movementMode: movementMode
             )
         )
     }

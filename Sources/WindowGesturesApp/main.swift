@@ -28,7 +28,7 @@ private final class ToucherSettings {
             Key.enableDiagnostics: false,
             Key.invertGestureDirection: false,
             Key.animationEnabled: false,
-            Key.animationDuration: 0.25,
+            Key.animationDuration: 0.30,
             Key.rawMinDistance: 0.08,
             Key.rawDominanceRatio: 2.0,
             Key.rawCooldown: 0.35
@@ -108,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let hotKeyRegistrar = CarbonHotKeyRegistrar()
     private lazy var windowController = AnimatedAccessibilityWindowController()
     private let gestureRecognizer = HorizontalSwipeRecognizer(invertDirection: false)
+    private let invertRawVerticalDirection = false
     private var rawGestureRecognizer = RawThreeFingerSwipeRecognizer()
     private let gestureDiagnostics = GestureDiagnosticState()
     private var commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>?
@@ -126,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var rawRecognizedGesturesCount = 0
     private var rawLeftGesturesCount = 0
     private var rawRightGesturesCount = 0
+    private var rawUpGesturesCount = 0
     private var rawIgnoredGesturesCount = 0
     private var rawUnsupportedFingerCountCount = 0
     private var rawCanceledGesturesCount = 0
@@ -136,8 +138,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pendingSettingsApply = false
     private var appliedSettingsSnapshot = ToucherSettingsSnapshot()
     private var statusItem: NSStatusItem?
-    private let versionMenuItem = NSMenuItem(title: "Toucher version: 0.5.2", action: nil, keyEquivalent: "")
+    private let versionMenuItem = NSMenuItem(title: "Toucher version: 0.5.3", action: nil, keyEquivalent: "")
     private let statusMenuItem = NSMenuItem(title: "Starting...", action: nil, keyEquivalent: "")
+    private let lastMovementModeMenuItem = NSMenuItem(title: "Last movement mode: none", action: nil, keyEquivalent: "")
+    private let lastAnimationFramesMenuItem = NSMenuItem(title: "Last animation frames count: 0", action: nil, keyEquivalent: "")
+    private let lastAnimationDurationMenuItem = NSMenuItem(title: "Last animation duration: 0.000", action: nil, keyEquivalent: "")
     private let accessibilityTrustedMenuItem = NSMenuItem(title: "Accessibility trusted: unknown", action: nil, keyEquivalent: "")
     private let appBundleIDMenuItem = NSMenuItem(title: "App bundle id: unknown", action: nil, keyEquivalent: "")
     private let appBundlePathMenuItem = NSMenuItem(title: "App bundle path: unknown", action: nil, keyEquivalent: "")
@@ -256,6 +261,9 @@ private extension AppDelegate {
         menu.delegate = self
         versionMenuItem.isEnabled = false
         statusMenuItem.isEnabled = false
+        lastMovementModeMenuItem.isEnabled = false
+        lastAnimationFramesMenuItem.isEnabled = false
+        lastAnimationDurationMenuItem.isEnabled = false
         accessibilityTrustedMenuItem.isEnabled = false
         appBundleIDMenuItem.isEnabled = false
         appBundlePathMenuItem.isEnabled = false
@@ -288,6 +296,9 @@ private extension AppDelegate {
         lastGestureIgnoredReasonMenuItem.isEnabled = false
         menu.addItem(versionMenuItem)
         menu.addItem(statusMenuItem)
+        menu.addItem(lastMovementModeMenuItem)
+        menu.addItem(lastAnimationFramesMenuItem)
+        menu.addItem(lastAnimationDurationMenuItem)
         menu.addItem(accessibilityTrustedMenuItem)
         menu.addItem(appBundleIDMenuItem)
         menu.addItem(appBundlePathMenuItem)
@@ -504,8 +515,15 @@ private extension AppDelegate {
         let gestureMonitor = gestureBackend?.isActive == true ? "active" : "inactive"
         let gestureProbe = gestureProbeWindowController?.isWindowOpen == true ? "active" : "inactive"
         let diagnostics = gestureDiagnostics.snapshot
+        let animationDiagnostics = windowController.diagnostics
 
         accessibilityTrustedMenuItem.title = "Accessibility trusted: \(trusted)"
+        lastMovementModeMenuItem.title = "Last movement mode: \(animationDiagnostics.lastMovementMode)"
+        lastAnimationFramesMenuItem.title = "Last animation frames count: \(animationDiagnostics.lastAnimationFramesCount)"
+        lastAnimationDurationMenuItem.title = String(
+            format: "Last animation duration: %.3f",
+            animationDiagnostics.lastAnimationDuration
+        )
         appBundleIDMenuItem.title = "App bundle id: \(bundleID)"
         appBundlePathMenuItem.title = "App bundle path: \(bundlePath)"
         gesturesEnabledMenuItem.title = "Gestures enabled: \(settings.enableGestures ? "yes" : "no")"
@@ -608,6 +626,8 @@ private extension AppDelegate {
                 rawLeftGesturesCount += 1
             } else if action == .rightHalf {
                 rawRightGesturesCount += 1
+            } else if action == .verticalMaxCenterThird {
+                rawUpGesturesCount += 1
             }
             appendRawEvent(sample: sample, result: action.debugName)
             _ = commandHandler
@@ -643,10 +663,11 @@ private extension AppDelegate {
 
     func appendRawEvent(sample: RawTouchSample, result: String) {
         let event = String(
-            format: "%.3f fingers=%d dxdy=%@ result=%@",
+            format: "%.3f fingers=%d dxdy=%@ duration=%@ result=%@",
             sample.timestamp,
             sample.activeTouchCount,
             lastRawCentroidDeltaDescription,
+            formatTimestamp(rawGestureRecognizer.diagnostics.lastGestureDuration),
             result
         )
         rawEventRingBuffer.append(event)
@@ -661,6 +682,7 @@ private extension AppDelegate {
             recognized: rawRecognizedGesturesCount,
             left: rawLeftGesturesCount,
             right: rawRightGesturesCount,
+            up: rawUpGesturesCount,
             ignored: rawIgnoredGesturesCount,
             unsupportedFingerCount: rawUnsupportedFingerCountCount,
             canceled: rawCanceledGesturesCount
@@ -773,8 +795,9 @@ private extension AppDelegate {
             action,
             options: WindowCommandOptions(
                 screenTarget: screenTarget,
-                animated: settings.animationEnabled,
-                animationDuration: settings.animationDuration
+                movementMode: settings.animationEnabled && settings.animationDuration > 0
+                    ? .animated(duration: settings.animationDuration)
+                    : .immediate
             )
         )
         show(result)
@@ -787,7 +810,8 @@ private extension AppDelegate {
             dominanceRatio: settings.rawDominanceRatio,
             maxGestureDuration: 0.8,
             cooldown: settings.rawCooldown,
-            invertDirection: settings.invertGestureDirection
+            invertDirection: settings.invertGestureDirection,
+            invertVerticalDirection: invertRawVerticalDirection
         )
     }
 
@@ -838,6 +862,7 @@ private struct RawDiagnosticsCounters {
     var recognized: Int
     var left: Int
     var right: Int
+    var up: Int
     var ignored: Int
     var unsupportedFingerCount: Int
     var canceled: Int
@@ -1116,12 +1141,14 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
         Total recognized gestures count: \(rawCounters.recognized)
         Left gestures count: \(rawCounters.left)
         Right gestures count: \(rawCounters.right)
+        Up gestures count: \(rawCounters.up)
         Ignored gestures count: \(rawCounters.ignored)
         Unsupported finger count count: \(rawCounters.unsupportedFingerCount)
         Canceled gestures count: \(rawCounters.canceled)
 
         Gesture timing:
         minHorizontalDistance: \(String(format: "%.3f", rawDiagnostics.minHorizontalDistance))
+        minVerticalDistance: \(String(format: "%.3f", rawDiagnostics.minVerticalDistance))
         dominanceRatio: \(String(format: "%.3f", rawDiagnostics.dominanceRatio))
         maxGestureDuration: \(String(format: "%.3f", rawDiagnostics.maxGestureDuration))
         cooldown: \(String(format: "%.3f", rawDiagnostics.cooldown))

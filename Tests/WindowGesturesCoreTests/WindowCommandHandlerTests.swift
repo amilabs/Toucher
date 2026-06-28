@@ -336,6 +336,45 @@ final class WindowCommandHandlerTests: XCTestCase {
         XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 1000, height: 800)])
         XCTAssertTrue(windows.animatedFrames.isEmpty)
     }
+
+    func testRestoreAfterAnimatedSnapReturnsWindowToOriginalFrame() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(
+            .verticalMaxCenterThird,
+            options: WindowCommandOptions(movementMode: .animated(duration: 0.25))
+        )
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.animatedFrames, [Rect(x: 400, y: 0, width: 400, height: 800)])
+        XCTAssertEqual(windows.movedFrames, [originalFrame])
+    }
+
+    func testAnimationDoesNotOverwriteRestoreFrameWithIntermediateFrames() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(.leftHalf, options: WindowCommandOptions(movementMode: .animated(duration: 0.25)))
+        _ = handler.perform(.rightHalf, options: WindowCommandOptions(movementMode: .animated(duration: 0.25)))
+        let result = handler.perform(.restore)
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.movedFrames, [originalFrame])
+    }
 }
 
 private struct MockPermissionChecker: PermissionChecking {

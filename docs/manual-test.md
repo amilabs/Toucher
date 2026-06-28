@@ -1,17 +1,31 @@
 # Toucher manual test
 
-## v0.5.2 smoke test
+## v0.5.3 smoke test
 
-1. Run `make run-debug`.
-2. Confirm Toucher appears as an icon only in the menu bar, not as text and not as a Dock app.
-3. Open the Toucher menu and confirm:
-   - `Toucher version: 0.5.2`
-   - `Accessibility trusted: yes`
-   - `App bundle id: com.amilabs.Toucher`
-   - `App bundle path: ~/Applications/Toucher.app`
-   - `Gesture backend: raw multitouch`
-   - `Raw multitouch active: yes`
-4. If Accessibility is not trusted, run:
+Fresh run:
+
+```bash
+pkill -x Toucher || true
+make run-debug
+```
+
+Expected menu state:
+
+- `Toucher version: 0.5.3`
+- `Accessibility trusted: yes`
+- `App bundle id: com.amilabs.Toucher`
+- `App bundle path: ~/Applications/Toucher.app`
+- `Gesture backend: raw multitouch`
+- `Raw multitouch active: yes`
+
+Expected settings defaults:
+
+- gestures enabled: yes
+- backend: raw
+- diagnostics: off
+- animation: off
+
+If Accessibility is not trusted, run:
 
 ```bash
 tccutil reset Accessibility com.amilabs.Toucher
@@ -19,7 +33,7 @@ tccutil reset Accessibility com.amilabs.Toucher
 
 Then remove old WindowGestures entries and add `~/Applications/Toucher.app` in System Settings > Privacy & Security > Accessibility. Quit and reopen Toucher after granting permission.
 
-## v0.5.2 settings crash smoke test
+## Settings stability
 
 Fresh reset:
 
@@ -28,13 +42,6 @@ pkill -x Toucher || true
 defaults delete com.amilabs.Toucher || true
 make run-debug
 ```
-
-Expected defaults:
-
-- gestures enabled: yes
-- backend: raw
-- diagnostics: off
-- animation: off
 
 Test:
 
@@ -49,43 +56,55 @@ Test:
 9. App must not crash.
 10. Toggle Animation enabled off.
 11. App must not crash.
-12. With animation off, verify:
-    - Ctrl+Shift+Left works
-    - Ctrl+Shift+Right works
-    - three-finger left/right works
-13. Open Gesture Diagnostics.
-14. App must not crash.
-15. Close Gesture Diagnostics.
-16. App must not crash.
+12. Open Gesture Diagnostics.
+13. App must not crash.
+14. Close Gesture Diagnostics.
+15. App must not crash.
 
-## Hotkeys
+## Animation off
 
 1. Open a normal resizable app window, such as TextEdit or Finder.
-2. Press Control + Shift + Left Arrow.
-3. Confirm the active window moves to the left half of its current monitor.
-4. Press Control + Shift + Right Arrow.
-5. Confirm the active window moves to the right half of its current monitor.
-6. Press Control + Shift + Up Arrow once.
-7. Confirm the active window maximizes to the visible frame of its current monitor.
-8. Press Control + Shift + Up Arrow twice quickly.
-9. Confirm the window becomes full visible height and centered at one third visible width.
-10. Press Control + Shift + Down Arrow.
-11. Confirm the window restores to its original frame.
+2. Confirm animation is off in Settings.
+3. Press Control + Shift + Left Arrow.
+4. Confirm the active window moves to the left half.
+5. Press Control + Shift + Right Arrow.
+6. Confirm the active window moves to the right half.
+7. Press Control + Shift + Up Arrow once.
+8. Confirm the active window maximizes to the visible frame.
+9. Press Control + Shift + Up Arrow twice quickly.
+10. Confirm the window becomes full visible height and centered at one third visible width.
+11. Swipe exactly three fingers left.
+12. Confirm the active window moves to the left half.
+13. Swipe exactly three fingers right.
+14. Confirm the active window moves to the right half.
+15. Swipe exactly three fingers up.
+16. Confirm the window maximizes to the full visible screen.
+17. Press Control + Shift + Down Arrow.
+18. Confirm the window restores to its original frame.
 
-## Raw gestures
+## Animation on
+
+1. Open Settings.
+2. Enable `Animation enabled (experimental)`.
+3. Set duration to `0.30`.
+4. Repeat the hotkeys and raw gestures from the animation-off test.
+5. Confirm movement is smooth and visible.
+6. Confirm the app does not crash.
+7. Confirm gestures and hotkeys still work.
+8. Disable animation.
+9. Confirm immediate movement works again.
+
+Note: three-finger up and Control + Shift + Up both maximize. Control + Shift + Up twice quickly is the separate centered one-third-width action.
+
+## Raw gesture rejection
 
 1. Quit BetterTouchTool for clean testing.
 2. Disable conflicting macOS Trackpad > More Gestures actions.
 3. Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
-4. Open TextEdit and make it active.
-5. Swipe exactly three fingers left.
-6. Confirm the window moves to the left half.
-7. Swipe exactly three fingers right.
-8. Confirm the window moves to the right half.
-9. Try two fingers left and right.
-10. Confirm the window does not move.
-11. Try four fingers left and right.
-12. Confirm the window does not move.
+4. Try two fingers left, right, and up.
+5. Confirm the window does not move.
+6. Try four fingers left, right, and up.
+7. Confirm the window does not move.
 
 ## Multi-monitor and Cmd modifier
 
@@ -100,46 +119,24 @@ Test:
 9. Hold Command and perform a three-finger left or right swipe.
 10. Confirm the gesture snaps left/right on the other or next monitor.
 
-## Animation
-
-1. Open Settings.
-2. Confirm `Animation enabled (experimental)` is off after a fresh defaults reset.
-3. With animation off, trigger hotkey and raw gesture actions.
-4. Confirm movement is immediate and reliable.
-5. Enable animation and set duration near `0.25`.
-6. Confirm hotkeys and gestures still execute without crashing.
-7. Disable animation again before final normal-use testing.
-
-## Settings persistence
-
-1. Open `Open Settings`.
-2. Change:
-   - `Enable gestures`
-   - `Gesture backend`
-   - `Enable diagnostics/probe`
-   - `Invert gesture direction`
-   - `Animation enabled`
-   - `Animation duration`
-   - raw distance, dominance, and cooldown values
-3. Quit Toucher.
-4. Run `make run-debug`.
-5. Confirm settings persist after restart.
-
 ## Gesture diagnostics
 
 1. Choose `Open Gesture Diagnostics`.
 2. Confirm the window title is `Toucher Gesture Diagnostics`.
 3. Confirm raw diagnostics appear before public NSEvent diagnostics.
-4. Perform raw gestures and confirm these counters update:
+4. Perform three-finger left, right, and up gestures.
+5. Confirm these counters update:
    - total raw callbacks
    - total recognized gestures
    - left gestures
    - right gestures
+   - up gestures
    - ignored gestures
    - unsupported finger count
    - canceled gestures
-5. Confirm timing fields show:
+6. Confirm timing fields show:
    - minHorizontalDistance
+   - minVerticalDistance
    - dominanceRatio
    - maxGestureDuration
    - cooldown

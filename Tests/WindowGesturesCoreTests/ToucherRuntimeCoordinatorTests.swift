@@ -102,8 +102,26 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(handler.actions, [.leftHalf])
         XCTAssertEqual(handler.options, [
-            WindowCommandOptions(screenTarget: .next, animated: true, animationDuration: 0.25)
+            WindowCommandOptions(screenTarget: .next, movementMode: .animated(duration: 0.30))
         ])
+    }
+
+    func testChangingAnimationDurationDoesNotRestartGestureBackend() {
+        let recorder = LifecycleRecorder()
+        let raw = MockGestureBackend(name: "raw", recorder: recorder)
+        let publicBackend = MockGestureBackend(name: "public", recorder: recorder)
+        let coordinator = ToucherRuntimeCoordinator(
+            settings: ToucherSettingsSnapshot(gestureBackend: .raw),
+            actionHandler: MockActionHandler(),
+            rawBackend: raw,
+            publicBackend: publicBackend
+        )
+
+        coordinator.applySettings(ToucherSettingsSnapshot(gestureBackend: .raw))
+        recorder.events.removeAll()
+        coordinator.applySettings(ToucherSettingsSnapshot(gestureBackend: .raw, animationDuration: 0.4))
+
+        XCTAssertTrue(recorder.events.isEmpty)
     }
 
     func testSettingsAreClamped() {

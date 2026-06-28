@@ -87,12 +87,17 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
         to frame: Rect,
         options: WindowCommandOptions
     ) throws {
-        if options.animated,
-           options.animationDuration > 0 {
-            try windows.animatedMove(window, to: frame, duration: options.animationDuration)
+        switch options.movementMode {
+        case .immediate:
+            try windows.move(window, to: frame)
+        case .animated(let duration):
+            guard duration > 0 else {
+                try windows.move(window, to: frame)
+                return
+            }
+
+            try windows.animatedMove(window, to: frame, duration: duration)
             return
         }
-
-        try windows.move(window, to: frame)
     }
 }

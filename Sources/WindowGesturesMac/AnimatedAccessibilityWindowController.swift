@@ -1,11 +1,28 @@
 import Foundation
 import WindowGesturesCore
 
+public struct WindowAnimationDiagnostics: Equatable, Sendable {
+    public var lastMovementMode: String
+    public var lastAnimationFramesCount: Int
+    public var lastAnimationDuration: TimeInterval
+
+    public init(
+        lastMovementMode: String = "none",
+        lastAnimationFramesCount: Int = 0,
+        lastAnimationDuration: TimeInterval = 0
+    ) {
+        self.lastMovementMode = lastMovementMode
+        self.lastAnimationFramesCount = lastAnimationFramesCount
+        self.lastAnimationDuration = lastAnimationDuration
+    }
+}
+
 public final class AnimatedAccessibilityWindowController: WindowControlling {
     public typealias Window = AccessibilityWindowController.Window
 
     private let base: AccessibilityWindowController
     private var timers: [String: Timer] = [:]
+    public private(set) var diagnostics = WindowAnimationDiagnostics()
 
     public init(
         base: AccessibilityWindowController = AccessibilityWindowController()
@@ -37,6 +54,11 @@ public final class AnimatedAccessibilityWindowController: WindowControlling {
         assertMainThread()
         let identifier = restoreIdentifier(for: window) ?? String(describing: ObjectIdentifier(window))
         cancelAnimation(for: identifier)
+        diagnostics = WindowAnimationDiagnostics(
+            lastMovementMode: "immediate",
+            lastAnimationFramesCount: 0,
+            lastAnimationDuration: 0
+        )
         try base.move(window, to: frame)
     }
 
@@ -47,6 +69,11 @@ public final class AnimatedAccessibilityWindowController: WindowControlling {
 
         let duration = min(0.5, max(0, duration))
         guard duration > 0 else {
+            diagnostics = WindowAnimationDiagnostics(
+                lastMovementMode: "immediate",
+                lastAnimationFramesCount: 0,
+                lastAnimationDuration: 0
+            )
             try base.move(window, to: frame)
             return
         }
@@ -54,12 +81,30 @@ public final class AnimatedAccessibilityWindowController: WindowControlling {
         let startFrame = try base.frame(for: window)
         let frames = AnimationPlanner.frames(from: startFrame, to: frame, duration: duration)
         guard frames.count > 1 else {
+            diagnostics = WindowAnimationDiagnostics(
+                lastMovementMode: "immediate",
+                lastAnimationFramesCount: 0,
+                lastAnimationDuration: 0
+            )
             try base.move(window, to: frame)
             return
         }
 
+        let scheduledFrames = AnimationPlanner.scheduledFrames(from: startFrame, to: frame, duration: duration)
+        guard let finalFrame = scheduledFrames.last,
+              finalFrame == frame else {
+            try base.move(window, to: frame)
+            return
+        }
+
+        diagnostics = WindowAnimationDiagnostics(
+            lastMovementMode: "animated",
+            lastAnimationFramesCount: scheduledFrames.count,
+            lastAnimationDuration: duration
+        )
+
         var index = 0
-        let timer = Timer.scheduledTimer(withTimeInterval: duration / Double(max(1, frames.count - 1)), repeats: true) {
+        let timer = Timer.scheduledTimer(withTimeInterval: duration / Double(max(1, scheduledFrames.count)), repeats: true) {
             [weak self, weak window] timer in
             guard let self,
                   let window else {
@@ -67,17 +112,24 @@ public final class AnimatedAccessibilityWindowController: WindowControlling {
                 return
             }
 
-            if index >= frames.count {
+            if index >= scheduledFrames.count {
                 timer.invalidate()
                 self.timers.removeValue(forKey: identifier)
                 return
             }
 
             do {
-                try self.base.move(window, to: frames[index])
+                try self.base.move(window, to: scheduledFrames[index])
             } catch {
                 timer.invalidate()
                 self.timers.removeValue(forKey: identifier)
+                return
+            }
+
+            if index == scheduledFrames.count - 1 {
+                timer.invalidate()
+                self.timers.removeValue(forKey: identifier)
+                return
             }
 
             index += 1

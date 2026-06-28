@@ -37,10 +37,23 @@ public enum WindowScreenTarget: Equatable, Sendable {
     case next
 }
 
+public enum WindowMovementMode: Equatable, Sendable {
+    case immediate
+    case animated(duration: TimeInterval)
+
+    public var isAnimated: Bool {
+        switch self {
+        case .immediate:
+            return false
+        case .animated(let duration):
+            return duration > 0
+        }
+    }
+}
+
 public struct WindowCommandOptions: Equatable, Sendable {
     public var screenTarget: WindowScreenTarget
-    public var animated: Bool
-    public var animationDuration: TimeInterval
+    public var movementMode: WindowMovementMode
 
     public init(
         screenTarget: WindowScreenTarget = .current,
@@ -48,8 +61,17 @@ public struct WindowCommandOptions: Equatable, Sendable {
         animationDuration: TimeInterval = 0.25
     ) {
         self.screenTarget = screenTarget
-        self.animated = animated
-        self.animationDuration = animationDuration
+        self.movementMode = animated && animationDuration > 0
+            ? .animated(duration: min(0.5, max(0, animationDuration)))
+            : .immediate
+    }
+
+    public init(
+        screenTarget: WindowScreenTarget = .current,
+        movementMode: WindowMovementMode
+    ) {
+        self.screenTarget = screenTarget
+        self.movementMode = movementMode
     }
 }
 
@@ -128,17 +150,33 @@ public enum ScreenSelector {
 }
 
 public enum AnimationPlanner {
+    public static let visibleFrameInterval: TimeInterval = 0.025
+
+    public static func scheduledFrames(
+        from start: Rect,
+        to end: Rect,
+        duration: TimeInterval,
+        frameInterval: TimeInterval = AnimationPlanner.visibleFrameInterval
+    ) -> [Rect] {
+        let frames = frames(from: start, to: end, duration: duration, frameInterval: frameInterval)
+        guard duration > 0 else {
+            return frames
+        }
+
+        return Array(frames.dropFirst())
+    }
+
     public static func frames(
         from start: Rect,
         to end: Rect,
         duration: TimeInterval,
-        frameInterval: TimeInterval = 1.0 / 60.0
+        frameInterval: TimeInterval = AnimationPlanner.visibleFrameInterval
     ) -> [Rect] {
         guard duration > 0 else {
             return [end]
         }
 
-        let steps = max(1, Int(ceil(duration / frameInterval)))
+        let steps = max(12, Int(ceil(duration / frameInterval)))
         return (0...steps).map { step in
             let progress = Double(step) / Double(steps)
             return interpolate(from: start, to: end, progress: easeOut(progress))

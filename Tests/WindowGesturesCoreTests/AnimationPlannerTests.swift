@@ -26,4 +26,31 @@ final class AnimationPlannerTests: XCTestCase {
         XCTAssertEqual(values.last, 1)
         XCTAssertTrue(zip(values, values.dropFirst()).allSatisfy { $0 <= $1 })
     }
+
+    func testScheduledFramesForQuarterSecondHasAtLeastTwelveSteps() {
+        let start = Rect(x: 0, y: 0, width: 100, height: 100)
+        let end = Rect(x: 100, y: 50, width: 200, height: 150)
+
+        let frames = AnimationPlanner.scheduledFrames(from: start, to: end, duration: 0.25)
+
+        XCTAssertGreaterThanOrEqual(frames.count, 12)
+    }
+
+    func testFirstScheduledFrameDiffersFromCurrentFrame() {
+        let start = Rect(x: 0, y: 0, width: 100, height: 100)
+        let end = Rect(x: 100, y: 50, width: 200, height: 150)
+
+        let frames = AnimationPlanner.scheduledFrames(from: start, to: end, duration: 0.25)
+
+        XCTAssertNotEqual(frames.first, start)
+    }
+
+    func testLastScheduledFrameEqualsTargetFrameExactly() {
+        let start = Rect(x: 0, y: 0, width: 100, height: 100)
+        let end = Rect(x: 100, y: 50, width: 200, height: 150)
+
+        let frames = AnimationPlanner.scheduledFrames(from: start, to: end, duration: 0.25)
+
+        XCTAssertEqual(frames.last, end)
+    }
 }
