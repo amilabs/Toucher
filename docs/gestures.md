@@ -1,61 +1,77 @@
-# Toucher gesture backends
+# Toucher Gestures and Hotkeys
 
-Toucher keeps gesture input behind the `GestureMonitoring` protocol so hotkeys, window movement, and gesture capture remain separate.
+Toucher supports both keyboard shortcuts and trackpad gestures. Hotkeys remain available even if gesture monitoring is disabled or unavailable.
 
-## Raw multitouch backend
+## User-Facing Gesture Behavior
 
-`RawMultitouchBackend` is the default v0.5.7 backend. It uses private macOS `MultitouchSupport.framework` to detect exact three-finger horizontal and upward swipes.
+Trackpad gestures:
 
-Raw gesture mapping:
+- Three-finger swipe left: move the active window to the left half of the current visible screen.
+- Three-finger swipe right: move the active window to the right half of the current visible screen.
+- Three-finger swipe up: maximize the active window on the current visible screen.
 
-- Three-finger swipe left: left half.
-- Three-finger swipe right: right half.
-- Three-finger swipe up: maximize to the current visible screen.
-- Three-finger swipe down: not implemented.
+Three-finger swipe down is not implemented.
 
-Implications:
+## Hotkey Behavior
 
-- Toucher is not App Store compatible.
-- The private API may break on future macOS versions.
-- Private API calls are isolated in `Sources/WindowGesturesMac/RawMultitouchBackend.swift`.
-- The framework is loaded dynamically with `dlopen`/`dlsym`.
-- If the framework, symbols, devices, or expected touch data are unavailable, Toucher fails gracefully and hotkeys continue to work.
+Keyboard shortcuts:
 
-The raw backend is event-driven. It processes incoming touch callbacks and does not poll, spin, or use timers for input collection.
+- Control + Shift + Left Arrow: left half.
+- Control + Shift + Right Arrow: right half.
+- Control + Shift + Up Arrow: maximize.
+- Control + Shift + Up Arrow twice quickly: full-height centered one-third width.
+- Control + Shift + Down Arrow: restore previous frame.
 
-## Public NSEvent backend
+## Command Modifier Behavior
 
-`PublicNSEventSwipeBackend` remains available for diagnostics and fallback. It uses public AppKit APIs:
+Holding Command with a left/right hotkey or gesture targets another screen:
 
-- `NSEvent.addGlobalMonitorForEvents`
-- `NSEvent.addLocalMonitorForEvents`
+- With two screens, Toucher targets the other screen.
+- With more than two screens, Toucher targets the next screen in deterministic frame order.
+- With one screen, Toucher stays on the current screen.
 
-Observed limitation: public `swipe` events may never arrive for trackpad three-finger swipe settings. Public `scrollWheel` events can arrive for both two-finger and three-finger movement, so `scrollWheel` cannot reliably identify exact three-finger gestures.
+## Raw Multitouch Backend Notes
 
-Public NSEvent diagnostics are off by default in normal raw mode to reduce idle CPU usage.
+The primary gesture backend uses macOS `MultitouchSupport.framework` to detect exact three-finger gestures.
 
-## Backend selection
+Implementation constraints:
 
-Normal Settings intentionally does not expose technical backend selection. For debug runs, set `WINDOWGESTURES_GESTURE_BACKEND` before launch:
+- private API calls are isolated in `Sources/WindowGesturesMac/RawMultitouchBackend.swift`
+- the framework is loaded dynamically
+- the backend is event-driven
+- hotkeys continue to work if raw multitouch is unavailable
 
-- `raw`: use raw multitouch.
-- `public`: use public NSEvent diagnostics.
-- `off`: disable gesture monitoring.
+This private API is the reason Toucher is not App Store compatible.
 
-Example:
+## Public NSEvent Diagnostics
+
+Toucher also contains a public AppKit NSEvent backend for diagnostics and fallback investigation.
+
+Public AppKit gesture events may not reliably expose exact three-finger swipes. Public scroll events can arrive for both two-finger and three-finger movement, so they are not used as the primary gesture source.
+
+Public NSEvent diagnostics are off by default in normal use.
+
+## Backend Selection for Development
+
+Normal Settings does not expose backend selection.
+
+For development:
 
 ```bash
+WINDOWGESTURES_GESTURE_BACKEND=raw make run-debug
+WINDOWGESTURES_GESTURE_BACKEND=public make run-debug
 WINDOWGESTURES_GESTURE_BACKEND=off make run-debug
 ```
 
-Hotkeys remain active regardless of gesture backend state.
-
 ## Troubleshooting
 
-- Quit BetterTouchTool for clean raw gesture testing.
-- Disable conflicting macOS Trackpad > More Gestures actions.
-- Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
-- Confirm Gesture Diagnostics shows `Raw multitouch available: yes` and `Raw multitouch active: yes`.
-- If raw is unavailable, record `Last raw error` from Gesture Diagnostics.
-- If active touches are not exactly `3`, the recognizer ignores or cancels the gesture.
-- Diagnostics mode can increase CPU because it may enable public NSEvent probes and a diagnostics window. Close diagnostics for normal idle checks.
+If gestures do not work:
+
+1. Confirm `Enable trackpad gestures` is enabled in Settings.
+2. Confirm Toucher has Accessibility permission.
+3. Quit BetterTouchTool while testing.
+4. Disable conflicting macOS Trackpad > More Gestures actions.
+5. Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
+6. Open Gesture Diagnostics from Settings and check backend status.
+
+If hotkeys work but gestures do not, window movement is working and the problem is gesture input.

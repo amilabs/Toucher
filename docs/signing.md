@@ -1,23 +1,31 @@
-# Toucher local signing
+# Toucher Signing and Distribution
 
-macOS Accessibility/TCC trust is sensitive to the app's code identity. Ad-hoc signing is useful for quick experiments, but it is unstable for local Accessibility development because each rebuild can look like a different app to TCC.
+Toucher is distributed outside the App Store. Signing and notarization are separate from Accessibility permission: users still need to enable Accessibility access after installing Toucher.
 
-For local debug builds, sign Toucher with a stable local Code Signing certificate. The current Makefile default is:
+## Local Development Signing
 
-`WindowGestures Local Dev`
+macOS TCC/Accessibility trust is sensitive to code identity. For reliable local testing, Toucher should be signed with a stable local Code Signing certificate.
 
-The certificate name is intentionally unchanged for now to avoid requiring a new local signing identity. The app identity is controlled by the bundle id:
+The Makefile default is:
 
-`com.amilabs.Toucher`
+```text
+SIGN_IDENTITY ?= WindowGestures Local Dev
+```
 
-## Create the certificate
+This is a legacy certificate name kept for existing local machines. The current app bundle id is:
+
+```text
+com.amilabs.Toucher
+```
+
+### Create the Local Certificate
 
 1. Open Keychain Access.
 2. Choose Certificate Assistant > Create a Certificate.
 3. Set the certificate name to `WindowGestures Local Dev`.
 4. Set Identity Type to `Self Signed Root`.
 5. Set Certificate Type to `Code Signing`.
-6. Create the certificate in your login keychain.
+6. Create the certificate in the login keychain.
 
 Confirm the identity is available:
 
@@ -25,46 +33,83 @@ Confirm the identity is available:
 security find-identity -v -p codesigning
 ```
 
-## Install and run debug
+### Run and Verify
+
+Install, sign, and launch the local debug app:
 
 ```bash
 make run-debug
 ```
 
-This installs and signs:
+Verify the installed bundle:
 
-`~/Applications/Toucher.app`
+```bash
+make debug-verify-bundle
+make debug-signing-info
+```
 
-To intentionally use ad-hoc signing for a one-off debug run:
+The debug app installs to:
+
+```text
+~/Applications/Toucher.app
+```
+
+### Ad-Hoc Signing
+
+Ad-hoc signing can be used for a one-off debug run:
 
 ```bash
 make run-debug SIGN_IDENTITY=-
 ```
 
-Do not use ad-hoc signing for normal Accessibility/TCC testing.
+Do not use ad-hoc signing for normal Accessibility testing. Rebuilt ad-hoc apps may not preserve macOS TCC trust reliably.
 
-## Reset Accessibility after rename
+### Accessibility Reset
 
-The v0.5 rename changes the bundle id from `com.amilabs.WindowGestures` to:
-
-`com.amilabs.Toucher`
-
-Reset TCC once:
+If Accessibility permission needs to be reset during testing:
 
 ```bash
-tccutil reset Accessibility com.amilabs.Toucher
+make debug-reset-accessibility
 ```
 
-Then open System Settings > Privacy & Security > Accessibility:
+Then re-add:
 
-1. Remove old WindowGestures entries.
-2. Remove entries pointing to `.build/debug/WindowGestures.app`, `/Applications/WindowGestures.app`, or `~/Applications/WindowGestures.app`.
-3. Add `~/Applications/Toucher.app`.
-4. Toucher should recover without a restart after Accessibility is enabled. If macOS still reports stale TCC state, quit and reopen Toucher as a fallback.
+```text
+~/Applications/Toucher.app
+```
 
-## Inspect signing
+in System Settings > Privacy & Security > Accessibility.
+
+## Public Distribution Outside the App Store
+
+A public macOS build should use Apple Developer ID distribution:
+
+1. Sign with a `Developer ID Application` certificate.
+2. Enable Hardened Runtime.
+3. Submit the signed app or archive for notarization with `notarytool`.
+4. Staple the notarization ticket.
+5. Package the final app as a zip, DMG, or PKG.
+6. Upload the package as a GitHub Release asset.
+
+Do not store Apple credentials, team secrets, notary passwords, or API keys in the repository.
+
+Suggested final verification:
 
 ```bash
-make debug-signing-info
-make debug-verify-bundle
+codesign --verify --deep --strict --verbose=2 Toucher.app
+spctl --assess --type execute --verbose Toucher.app
+xcrun stapler validate Toucher.app
 ```
+
+Accessibility permission is still required after Developer ID signing and notarization.
+
+## Legacy Migration Note
+
+Older local builds used the WindowGestures name and bundle id. Current builds should use:
+
+```text
+Toucher.app
+com.amilabs.Toucher
+```
+
+Remove old Accessibility entries only if they point to obsolete WindowGestures app copies or old debug paths.

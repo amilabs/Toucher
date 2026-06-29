@@ -1,61 +1,100 @@
 # Toucher
 
-Toucher is a personal macOS menu bar app for fast window movement with hotkeys and experimental raw trackpad gestures.
+Toucher is a lightweight macOS menu bar utility for moving and resizing windows with hotkeys and trackpad gestures.
 
-Current v0.5.7 behavior:
+It is distributed outside the App Store and requires Accessibility permission to control windows.
 
-- Control + Shift + Left Arrow: move active window to left half of current visible screen.
-- Control + Shift + Right Arrow: move active window to right half of current visible screen.
-- Control + Shift + Up Arrow: maximize to the current visible screen.
-- Control + Shift + Up Arrow twice quickly: full-height centered one-third width.
-- Control + Shift + Down Arrow: restore previous frame.
-- Three-finger swipe left/right: move active window left/right using the raw multitouch backend.
-- Three-finger swipe up: maximize to the current visible screen.
-- Command with left/right hotkey or gesture: snap to the other or next screen.
-- Window movement can use discrete AX set-frame animation. The default is enabled with 32 steps and a 0.10 second requested duration.
+## Requirements
 
-Toucher is not intended for the App Store. The raw gesture backend uses private macOS `MultitouchSupport.framework`, isolated in `WindowGesturesMac`.
+- macOS 13 or later
+- Accessibility permission for `Toucher.app`
+- A trackpad for gesture controls
 
-## Local debug
+## Supported Controls
 
-```bash
-make check
-make run-debug
-```
+Hotkeys:
 
-The debug app installs to:
+- Control + Shift + Left Arrow: move the active window to the left half of the current visible screen.
+- Control + Shift + Right Arrow: move the active window to the right half of the current visible screen.
+- Control + Shift + Up Arrow: maximize the active window on the current visible screen.
+- Control + Shift + Up Arrow twice quickly: resize to full height and centered one-third width.
+- Control + Shift + Down Arrow: restore the previous frame.
 
-`~/Applications/Toucher.app`
+Trackpad gestures:
 
-Bundle id:
+- Three-finger swipe left: move the active window to the left half.
+- Three-finger swipe right: move the active window to the right half.
+- Three-finger swipe up: maximize the active window.
 
-`com.amilabs.Toucher`
+Multi-monitor behavior:
 
-Accessibility permission must be granted to `~/Applications/Toucher.app`.
+- By default, Toucher keeps the active window on its current screen.
+- Hold Command with a left/right hotkey or gesture to target the other or next screen.
 
-Status bar menu:
+## Installation
+
+Download and unzip the release archive, then move `Toucher.app` to your Applications folder or another stable location.
+
+On first launch, macOS may ask for confirmation because Toucher is distributed outside the App Store.
+
+## Accessibility Permission
+
+Toucher needs Accessibility access to move and resize windows.
+
+To enable it:
+
+1. Open System Settings.
+2. Go to Privacy & Security > Accessibility.
+3. Add or enable `Toucher.app`.
+4. Return to Toucher. The Settings window should update automatically.
+
+If Accessibility is missing, Toucher does not move windows and shows a warning in the status bar menu.
+
+## Status Bar Menu
+
+When Accessibility is enabled:
 
 - About Toucher
 - Settings
 - Quit Toucher
 
-Settings contains the user-facing controls for gestures and movement, plus buttons for `Accessibility Settings…` and `Gesture Diagnostics…`.
+When Accessibility is not enabled:
 
-If Accessibility access is toggled off and then back on, Toucher re-checks `AXIsProcessTrusted()` live and should recover without an app restart.
+- About Toucher
+- ⚠ Settings — Accessibility required
+- Quit Toucher
 
-## Gesture backend selection
+## Settings
 
-```bash
-WINDOWGESTURES_GESTURE_BACKEND=raw make run-debug
-WINDOWGESTURES_GESTURE_BACKEND=public make run-debug
-WINDOWGESTURES_GESTURE_BACKEND=off make run-debug
-```
+The Settings window includes:
 
-Raw multitouch is the default backend. Public NSEvent diagnostics are inactive by default in normal raw mode.
+- Enable trackpad gestures
+- Animate window movement
+- Animation steps
+- Animation duration
+- Accessibility status
+- Accessibility Settings…
+- Gesture Diagnostics…
 
-## Docs
+## Troubleshooting
 
-- `docs/manual-test.md`
-- `docs/gestures.md`
-- `docs/signing.md`
-- `docs/dev-workflow.md`
+If hotkeys or gestures are recognized but windows do not move:
+
+1. Confirm Toucher is enabled in System Settings > Privacy & Security > Accessibility.
+2. Open Toucher Settings and check the System Access status.
+3. Quit conflicting gesture tools while testing, such as BetterTouchTool.
+4. If permission was changed recently, wait a few seconds for Toucher to update.
+5. If macOS still shows inconsistent permission state, remove and re-add `Toucher.app` in Accessibility.
+
+## Distribution Note
+
+Toucher uses a private macOS multitouch API to recognize exact three-finger gestures. This API is isolated to the macOS adapter layer and is the reason Toucher is not App Store compatible.
+
+Hotkeys and window movement use standard macOS APIs.
+
+## Developer Documentation
+
+- [Development workflow](docs/dev-workflow.md)
+- [Signing and distribution](docs/signing.md)
+- [Gesture behavior](docs/gestures.md)
+- [Manual release testing](docs/manual-test.md)

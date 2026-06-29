@@ -1,8 +1,8 @@
-# Toucher manual test
+# Toucher Manual Release Test
 
-## v0.5.7 release smoke test
+Use this checklist before publishing a release.
 
-Fresh start:
+## Fresh Start
 
 ```bash
 pkill -x Toucher || true
@@ -10,198 +10,124 @@ defaults delete com.amilabs.Toucher || true
 make run-debug
 ```
 
-Expected defaults:
+The debug app installs to:
 
-- Animate window movement is enabled.
-- Animation steps is `32`.
-- Animation duration is `0.10s`.
-
-Expected main menu:
-
-- compact menu, icon only in the menu bar
-- first item is `About Toucher`
-- `Settings` when Accessibility is trusted
-- `⚠ Settings — Accessibility required` when Accessibility is not trusted
-- `Quit Toucher`
-
-The main menu should not show long debug rows such as bundle path, raw callback counters, movement frame details, skipped steps, target frame, public NSEvent diagnostics, Gesture Diagnostics, or Accessibility Settings. The only status warning allowed in the menu is the Settings title changing to `⚠ Settings — Accessibility required`.
-
-If Accessibility is not trusted, run:
-
-```bash
-tccutil reset Accessibility com.amilabs.Toucher
+```text
+~/Applications/Toucher.app
 ```
 
-Then remove old WindowGestures entries and add `~/Applications/Toucher.app` in System Settings > Privacy & Security > Accessibility. Toucher should recover after permission is granted without an app restart.
+## Expected Defaults
 
-After bundle id, signing, or path changes, macOS may keep a stale Accessibility entry. Do not reset automatically during normal use. For release smoke testing, reset manually with:
+- Animate window movement: enabled
+- Animation steps: `32`
+- Animation duration: `0.10s`
+- Trackpad gestures: enabled
 
-```bash
-make debug-reset-accessibility
-```
+## Status Bar Menu
 
-Then relaunch Toucher only if macOS still reports stale TCC state after re-adding `~/Applications/Toucher.app` in System Settings > Privacy & Security > Accessibility.
+When Accessibility is enabled, the menu must show:
 
-## Settings stability
+- About Toucher
+- Settings
+- Quit Toucher
+
+When Accessibility is not enabled, the menu must show:
+
+- About Toucher
+- ⚠ Settings — Accessibility required
+- Quit Toucher
+
+The status bar itself should show only the Toucher icon.
+
+## Settings Stability
 
 1. Open Settings.
-2. Close Settings.
-3. Open Settings again.
-4. App must not crash.
-5. Change every visible setting one by one.
-6. App must not crash.
-7. Close and reopen Settings again.
-8. App must not crash.
+2. Confirm these sections are visible:
+   - Gestures
+   - Movement
+   - System Access
+   - Diagnostics
+3. Toggle `Enable trackpad gestures`.
+4. Toggle `Animate window movement`.
+5. Change `Animation steps`.
+6. Change `Animation duration`.
+7. Confirm layout remains stable and text is not clipped.
+8. Close and reopen Settings.
+9. Confirm no duplicate Settings windows are created.
 
-Visible settings:
-
-- Enable trackpad gestures
-- Animate window movement
-- Animation steps
-- Animation duration
-- Accessibility status
-- Accessibility Settings…
-- Gesture Diagnostics…
-
-Technical backend, raw threshold, and public probe options belong in Gesture Diagnostics or internal defaults, not normal Settings.
-
-## About Toucher
-
-1. Open `About Toucher`.
-2. Confirm it shows:
-   - Toucher
-   - Version `0.5.7`
-   - build date
-   - `GitHub Repository`
-   - no Bundle ID
-3. Click the repository link.
-4. Confirm it opens GitHub in the default browser.
-5. Close and reopen About Toucher.
-6. App must not crash.
-
-## Gesture and hotkey test
-
-1. Open a normal resizable app window, such as TextEdit or Finder.
-2. Press Control + Shift + Left Arrow.
-3. Confirm the active window moves to the left half.
-4. Press Control + Shift + Right Arrow.
-5. Confirm the active window moves to the right half.
-6. Press Control + Shift + Up Arrow once.
-7. Confirm the active window maximizes to the visible frame.
-8. Press Control + Shift + Up Arrow twice quickly.
-9. Confirm the window becomes full visible height and centered at one third visible width.
-10. Press Control + Shift + Down Arrow.
-11. Confirm the window restores to its original frame.
-12. Swipe exactly three fingers left.
-13. Confirm the active window moves to the left half.
-14. Swipe exactly three fingers right.
-15. Confirm the active window moves to the right half.
-16. Swipe exactly three fingers up.
-17. Confirm the window maximizes to the full visible screen.
-
-Note: three-finger up and Control + Shift + Up both maximize. Control + Shift + Up twice quickly is the separate centered one-third-width action.
-
-If Settings shows Accessibility as not enabled while Toucher is visibly enabled in System Settings, reset TCC manually, re-add Toucher, and retry a real hotkey. Relaunch only if macOS still reports stale TCC state. Unit tests cannot fully validate real TCC permission state.
-
-## Accessibility false-to-true recovery
+## Accessibility Recovery
 
 1. Start Toucher with Accessibility enabled.
-2. Open the menu.
-3. Confirm it shows only `About Toucher`, `Settings`, and `Quit Toucher`.
+2. Open the status bar menu.
+3. Confirm it shows `About Toucher`, `Settings`, and `Quit Toucher`.
 4. Press Control + Shift + Left Arrow.
-5. Confirm the window moves.
+5. Confirm the active window moves.
 6. Disable Toucher in System Settings > Privacy & Security > Accessibility.
-7. Open the menu.
+7. Open the status bar menu.
 8. Confirm it shows `About Toucher`, `⚠ Settings — Accessibility required`, and `Quit Toucher`.
-9. Click `⚠ Settings — Accessibility required`.
-10. Confirm Settings opens and System Access shows `Accessibility: Not enabled` with the inline warning visible.
-11. Press Control + Shift + Left Arrow or perform a three-finger left swipe.
-12. Confirm the window does not move and the app remains responsive.
-13. Click `Gesture Diagnostics…` in Settings and confirm:
-    - Accessibility trusted: no
-    - Waiting for accessibility: yes
-    - Last AX error: accessibilityPermissionMissing
-14. Enable Toucher again in Accessibility settings.
+9. Open Settings.
+10. Confirm System Access shows `Accessibility: Not enabled`.
+11. Confirm the inline warning is visible.
+12. Try a hotkey or gesture.
+13. Confirm the window does not move and Toucher remains responsive.
+14. Enable Toucher again in Accessibility.
 15. Do not restart Toucher.
-16. Return to Settings.
-17. Confirm System Access updates to `Accessibility: Enabled` and the warning disappears.
-18. Press Control + Shift + Right Arrow and perform a three-finger right swipe.
-19. Confirm movement works without restart.
-20. Open the menu and confirm it shows `About Toucher`, `Settings`, and `Quit Toucher`.
-21. Open Gesture Diagnostics from Settings and confirm:
-    - Accessibility trusted: yes
-    - Last accessibility transition: untrustedToTrusted
+16. Confirm Settings changes to `Accessibility: Enabled`.
+17. Confirm the inline warning disappears.
+18. Confirm hotkeys and gestures work again.
+19. Confirm the status bar menu returns to `About Toucher`, `Settings`, and `Quit Toucher`.
 
-Toucher temporarily polls Accessibility trust only while untrusted/waiting, then stops polling after trust returns.
+## Hotkeys
 
-## Coordinate smoke test
+Use a normal resizable app window, such as Finder or TextEdit.
 
-On macOS 15.1.1 or later:
+1. Control + Shift + Left Arrow -> left half.
+2. Control + Shift + Right Arrow -> right half.
+3. Control + Shift + Up Arrow -> maximize.
+4. Control + Shift + Up Arrow twice quickly -> full-height centered one-third width.
+5. Control + Shift + Down Arrow -> restore previous frame.
 
-1. Press Control + Shift + Left Arrow.
-2. Press Control + Shift + Right Arrow.
-3. Press Control + Shift + Up Arrow.
-4. Press Control + Shift + Up Arrow twice quickly.
-5. Press Control + Shift + Down Arrow.
-6. Confirm every target stays fully inside the selected screen visible height.
-7. Repeat on an external monitor if available.
-8. If any target is wrong, open Settings > Gesture Diagnostics and copy the Screen Geometry Debug Info block.
+## Trackpad Gestures
 
-## Raw gesture rejection
+1. Swipe exactly three fingers left -> left half.
+2. Swipe exactly three fingers right -> right half.
+3. Swipe exactly three fingers up -> maximize.
+4. Move with two fingers -> no window action.
+5. Move with four fingers -> no window action.
 
-1. Quit BetterTouchTool for clean testing.
-2. Disable conflicting macOS Trackpad > More Gestures actions.
-3. Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
-4. Try two fingers left, right, and up.
-5. Confirm the window does not move.
-6. Try four fingers left, right, and up.
-7. Confirm the window does not move.
+For clean gesture testing:
 
-## Multi-monitor and Cmd modifier
+- quit BetterTouchTool
+- disable conflicting macOS Trackpad > More Gestures actions
+- disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag
 
-1. Place a test window on a secondary monitor.
-2. Press Control + Shift + Left Arrow.
-3. Confirm the window snaps on the secondary monitor and does not jump to the main monitor.
-4. Place a window partially across two monitors.
-5. Confirm snapping uses the monitor containing the window center. If the center is not on a monitor, confirm it uses the monitor with the largest intersection.
-6. Hold Command and press Control + Shift + Left Arrow or Control + Shift + Right Arrow.
-7. With two monitors, confirm the window snaps to the other monitor.
-8. With more than two monitors, confirm the target is the next monitor in deterministic minX/minY order.
-9. Hold Command and perform a three-finger left or right swipe.
-10. Confirm the gesture snaps left/right on the other or next monitor.
+## Multi-Monitor Behavior
 
-## Gesture diagnostics
+1. Place a window on a secondary monitor.
+2. Snap left and right.
+3. Confirm the window stays on the current monitor.
+4. Place a window partially across monitors.
+5. Confirm Toucher chooses the monitor containing the window center, or largest intersection when the center is outside all screens.
+6. Hold Command with a left/right hotkey.
+7. Confirm Toucher targets the other or next screen.
+8. Hold Command with a three-finger left/right gesture.
+9. Confirm Toucher targets the other or next screen.
+
+## Diagnostics
 
 1. Open Settings.
 2. Click `Gesture Diagnostics…`.
-3. Close Gesture Diagnostics.
-4. Open Gesture Diagnostics again from Settings.
-5. App must not crash.
+3. Confirm the window opens.
+4. Close and reopen Gesture Diagnostics.
+5. Confirm the app does not crash.
 6. Perform three-finger left, right, and up gestures.
-7. Confirm these counters update:
-   - total raw callbacks
-   - total recognized gestures
-   - left gestures
-   - right gestures
-   - up gestures
-8. Confirm Last accepted gesture, Last accepted dx/dy, and Last accepted duration update.
-9. Move with two or four fingers.
-10. Confirm unsupported finger count increases but Last 10 raw events are not filled with continuous two-finger/four-finger noise.
-11. Confirm movement diagnostics show:
-   - last movement mode
-   - movement kind
-   - animation steps setting
-   - requested duration
-   - actual elapsed duration
-   - steps planned/applied/skipped
-   - fallback used
-   - target frame
-   - final readback frame if available
-   - movement error
+7. Confirm gesture counters update.
+8. Confirm Accessibility state is shown correctly.
+9. Confirm movement details are available for troubleshooting, including movement mode, target frame, readback frame if available, and movement error.
 
-Diagnostics mode can increase CPU. Normal idle mode should stay low because public NSEvent diagnostics are off by default, the diagnostics window is throttled, and no movement timers run while idle.
+Diagnostics may increase CPU while open. Close Gesture Diagnostics for normal idle checks.
 
-## CPU check
+## CPU and Idle Behavior
 
 Run:
 
@@ -210,3 +136,26 @@ make debug-cpu-note
 ```
 
 Then check Toucher in Activity Monitor or with the printed `top` command.
+
+Expected behavior:
+
+- no continuous work in normal idle mode
+- no movement timers while idle
+- diagnostics updates only while Gesture Diagnostics is open
+
+## Signing and Bundle Verification
+
+Run:
+
+```bash
+make check
+make debug-verify-bundle
+```
+
+Confirm:
+
+- bundle id is `com.amilabs.Toucher`
+- executable is `Toucher`
+- version is current
+- app path is `~/Applications/Toucher.app`
+- signing identity is expected for the build

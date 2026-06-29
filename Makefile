@@ -75,7 +75,7 @@ run-debug:
 reset-accessibility:
 	@echo "App bundle id: $(BUNDLE_ID)"; \
 	tccutil reset Accessibility "$(BUNDLE_ID)"; \
-	echo "If Toucher still appears stale, remove and re-add $(INSTALL_APP) in System Settings > Privacy & Security > Accessibility."
+	echo "If Toucher still shows the wrong Accessibility state, remove and re-add $(INSTALL_APP) in System Settings > Privacy & Security > Accessibility."
 
 debug-reset-accessibility: reset-accessibility
 
