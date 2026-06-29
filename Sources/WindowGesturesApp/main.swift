@@ -12,6 +12,11 @@ private final class ToucherSettings {
         static let invertGestureDirection = "invertGestureDirection"
         static let animationEnabled = "animationEnabled"
         static let animationDuration = "animationDuration"
+        static let snapFeedbackEnabled = "snapFeedbackEnabled"
+        static let snapFeedbackDuration = "snapFeedbackDuration"
+        static let animateWindowMovement = "animateWindowMovement"
+        static let movementAnimationDuration = "movementAnimationDuration"
+        static let movementAnimationSteps = "movementAnimationSteps"
         static let rawMinDistance = "rawMinDistance"
         static let rawDominanceRatio = "rawDominanceRatio"
         static let rawCooldown = "rawCooldown"
@@ -22,17 +27,39 @@ private final class ToucherSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        let hasAnimateWindowMovement = defaults.object(forKey: Key.animateWindowMovement) != nil
+        let legacySnapFeedbackEnabled = defaults.object(forKey: Key.snapFeedbackEnabled) != nil &&
+            defaults.bool(forKey: Key.snapFeedbackEnabled)
+        let legacyAnimationEnabled = defaults.object(forKey: Key.animationEnabled) != nil &&
+            defaults.bool(forKey: Key.animationEnabled)
+        let hasMovementAnimationDuration = defaults.object(forKey: Key.movementAnimationDuration) != nil
+        let legacySnapFeedbackDuration = defaults.object(forKey: Key.snapFeedbackDuration) as? Double
+        let legacyAnimationDuration = defaults.object(forKey: Key.animationDuration) as? Double
         defaults.register(defaults: [
             Key.enableGestures: true,
             Key.gestureBackend: ToucherBackendPreference.raw.rawValue,
             Key.enableDiagnostics: false,
             Key.invertGestureDirection: false,
             Key.animationEnabled: false,
-            Key.animationDuration: 0.25,
+            Key.animationDuration: 0.30,
+            Key.snapFeedbackEnabled: false,
+            Key.snapFeedbackDuration: 0.20,
+            Key.animateWindowMovement: false,
+            Key.movementAnimationDuration: 0.25,
+            Key.movementAnimationSteps: 5,
             Key.rawMinDistance: 0.08,
             Key.rawDominanceRatio: 2.0,
             Key.rawCooldown: 0.35
         ])
+        if !hasAnimateWindowMovement, legacySnapFeedbackEnabled || legacyAnimationEnabled {
+            defaults.set(true, forKey: Key.animateWindowMovement)
+        }
+        if !hasMovementAnimationDuration {
+            let migratedDuration = legacySnapFeedbackDuration ?? legacyAnimationDuration
+            if let migratedDuration {
+                defaults.set(min(0.5, max(0.05, migratedDuration)), forKey: Key.movementAnimationDuration)
+            }
+        }
     }
 
     var enableGestures: Bool {
@@ -57,14 +84,19 @@ private final class ToucherSettings {
         set { set(newValue, forKey: Key.invertGestureDirection) }
     }
 
-    var animationEnabled: Bool {
-        get { defaults.bool(forKey: Key.animationEnabled) }
-        set { set(newValue, forKey: Key.animationEnabled) }
+    var animateWindowMovement: Bool {
+        get { defaults.bool(forKey: Key.animateWindowMovement) }
+        set { set(newValue, forKey: Key.animateWindowMovement) }
     }
 
-    var animationDuration: TimeInterval {
-        get { min(0.5, max(0, defaults.double(forKey: Key.animationDuration))) }
-        set { set(min(0.5, max(0, newValue)), forKey: Key.animationDuration) }
+    var movementAnimationDuration: TimeInterval {
+        get { min(0.5, max(0.05, defaults.double(forKey: Key.movementAnimationDuration))) }
+        set { set(min(0.5, max(0.05, newValue)), forKey: Key.movementAnimationDuration) }
+    }
+
+    var movementAnimationSteps: Int {
+        get { min(12, max(2, defaults.integer(forKey: Key.movementAnimationSteps))) }
+        set { set(min(12, max(2, newValue)), forKey: Key.movementAnimationSteps) }
     }
 
     var rawMinDistance: Double {
@@ -88,8 +120,9 @@ private final class ToucherSettings {
             gestureBackend: gestureBackend,
             enableDiagnostics: enableDiagnostics,
             invertGestureDirection: invertGestureDirection,
-            animationEnabled: animationEnabled,
-            animationDuration: animationDuration,
+            animateWindowMovement: animateWindowMovement,
+            animationDuration: movementAnimationDuration,
+            animationSteps: movementAnimationSteps,
             rawMinDistance: rawMinDistance,
             rawDominanceRatio: rawDominanceRatio,
             rawCooldown: rawCooldown
@@ -106,11 +139,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let settings = ToucherSettings()
     private let permissionChecker = AccessibilityPermissionChecker()
     private let hotKeyRegistrar = CarbonHotKeyRegistrar()
-    private lazy var windowController = AnimatedAccessibilityWindowController()
+    private lazy var windowController = ImmediateAccessibilityWindowController()
     private let gestureRecognizer = HorizontalSwipeRecognizer(invertDirection: false)
+    private let invertRawVerticalDirection = false
     private var rawGestureRecognizer = RawThreeFingerSwipeRecognizer()
     private let gestureDiagnostics = GestureDiagnosticState()
-    private var commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>?
+    private var commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, ImmediateAccessibilityWindowController>?
     private var hotKeyCoordinator: HotKeyCoordinator<CarbonHotKeyRegistrar>?
     private var gestureBackend: GestureMonitoring?
     private var publicGestureBackend: PublicNSEventSwipeBackend?
@@ -122,10 +156,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastRawGestureDescription = "none"
     private var lastRawGestureActionDescription = "none"
     private var lastRawGestureIgnoredReasonDescription = "none"
+    private var lastAcceptedRawGestureDescription = "none"
+    private var lastAcceptedRawDeltaDescription = "none"
+    private var lastAcceptedRawDurationDescription = "none"
     private var rawCallbacksCount = 0
     private var rawRecognizedGesturesCount = 0
     private var rawLeftGesturesCount = 0
     private var rawRightGesturesCount = 0
+    private var rawUpGesturesCount = 0
     private var rawIgnoredGesturesCount = 0
     private var rawUnsupportedFingerCountCount = 0
     private var rawCanceledGesturesCount = 0
@@ -136,8 +174,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pendingSettingsApply = false
     private var appliedSettingsSnapshot = ToucherSettingsSnapshot()
     private var statusItem: NSStatusItem?
-    private let versionMenuItem = NSMenuItem(title: "Toucher version: 0.5.2", action: nil, keyEquivalent: "")
+    private let versionMenuItem = NSMenuItem(title: "Toucher version: 0.5.6", action: nil, keyEquivalent: "")
     private let statusMenuItem = NSMenuItem(title: "Starting...", action: nil, keyEquivalent: "")
+    private let lastMovementModeMenuItem = NSMenuItem(title: "Last movement mode: none", action: nil, keyEquivalent: "")
+    private let lastMovementTargetFrameMenuItem = NSMenuItem(title: "Last movement target frame: none", action: nil, keyEquivalent: "")
+    private let lastMovementFinalFrameMenuItem = NSMenuItem(title: "Last movement final readback frame: none", action: nil, keyEquivalent: "")
+    private let lastMovementErrorMenuItem = NSMenuItem(title: "Last movement error: none", action: nil, keyEquivalent: "")
     private let accessibilityTrustedMenuItem = NSMenuItem(title: "Accessibility trusted: unknown", action: nil, keyEquivalent: "")
     private let appBundleIDMenuItem = NSMenuItem(title: "App bundle id: unknown", action: nil, keyEquivalent: "")
     private let appBundlePathMenuItem = NSMenuItem(title: "App bundle path: unknown", action: nil, keyEquivalent: "")
@@ -204,7 +246,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         hotKeyCoordinator?.stop()
         stopGestureBackends()
-        windowController.cancelAnimations()
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
     }
 
     func menuWillOpen(_ menu: NSMenu) {
@@ -256,6 +301,10 @@ private extension AppDelegate {
         menu.delegate = self
         versionMenuItem.isEnabled = false
         statusMenuItem.isEnabled = false
+        lastMovementModeMenuItem.isEnabled = false
+        lastMovementTargetFrameMenuItem.isEnabled = false
+        lastMovementFinalFrameMenuItem.isEnabled = false
+        lastMovementErrorMenuItem.isEnabled = false
         accessibilityTrustedMenuItem.isEnabled = false
         appBundleIDMenuItem.isEnabled = false
         appBundlePathMenuItem.isEnabled = false
@@ -288,6 +337,10 @@ private extension AppDelegate {
         lastGestureIgnoredReasonMenuItem.isEnabled = false
         menu.addItem(versionMenuItem)
         menu.addItem(statusMenuItem)
+        menu.addItem(lastMovementModeMenuItem)
+        menu.addItem(lastMovementTargetFrameMenuItem)
+        menu.addItem(lastMovementFinalFrameMenuItem)
+        menu.addItem(lastMovementErrorMenuItem)
         menu.addItem(accessibilityTrustedMenuItem)
         menu.addItem(appBundleIDMenuItem)
         menu.addItem(appBundlePathMenuItem)
@@ -357,7 +410,7 @@ private extension AppDelegate {
     }
 
     func configureGestureBackend(
-        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>
+        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, ImmediateAccessibilityWindowController>
     ) {
         stopGestureBackends()
         guard settings.enableGestures else {
@@ -391,7 +444,7 @@ private extension AppDelegate {
     }
 
     func startPublicGestureBackend(
-        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>,
+        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, ImmediateAccessibilityWindowController>,
         primary: Bool
     ) {
         guard publicGestureBackend == nil else {
@@ -413,7 +466,7 @@ private extension AppDelegate {
     }
 
     func startRawGestureBackend(
-        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>
+        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, ImmediateAccessibilityWindowController>
     ) -> Bool {
         let backend = RawMultitouchBackend(
             handleSample: { [weak self, commandHandler] sample in
@@ -427,6 +480,7 @@ private extension AppDelegate {
                     self?.refreshDebugInfo()
                     if let self {
                         self.gestureProbeWindowController?.scheduleUpdate(
+                            movementDiagnostics: self.windowController.diagnostics,
                             rawStatus: status,
                             rawDiagnostics: self.rawGestureRecognizer.diagnostics,
                             counters: self.rawDiagnosticsCounters(),
@@ -504,8 +558,17 @@ private extension AppDelegate {
         let gestureMonitor = gestureBackend?.isActive == true ? "active" : "inactive"
         let gestureProbe = gestureProbeWindowController?.isWindowOpen == true ? "active" : "inactive"
         let diagnostics = gestureDiagnostics.snapshot
+        let movementDiagnostics = windowController.diagnostics
+        let showVerboseDiagnostics = settings.enableDiagnostics ||
+            settings.gestureBackend == .public ||
+            gestureProbeWindowController?.isWindowOpen == true
+        let showPublicDiagnostics = showVerboseDiagnostics
 
         accessibilityTrustedMenuItem.title = "Accessibility trusted: \(trusted)"
+        lastMovementModeMenuItem.title = "Last movement mode: \(movementDiagnostics.lastMovementMode)"
+        lastMovementTargetFrameMenuItem.title = "Last movement target frame: \(formatRect(movementDiagnostics.lastTargetFrame))"
+        lastMovementFinalFrameMenuItem.title = "Last movement final readback frame: \(formatRect(movementDiagnostics.lastFinalReadbackFrame))"
+        lastMovementErrorMenuItem.title = "Last movement error: \(movementDiagnostics.lastMovementError ?? "none")"
         appBundleIDMenuItem.title = "App bundle id: \(bundleID)"
         appBundlePathMenuItem.title = "App bundle path: \(bundlePath)"
         gesturesEnabledMenuItem.title = "Gestures enabled: \(settings.enableGestures ? "yes" : "no")"
@@ -535,11 +598,35 @@ private extension AppDelegate {
         lastGestureEventMenuItem.title = "Last gesture event: \(lastGestureEventDescription)"
         lastGestureActionMenuItem.title = "Last gesture action: \(lastGestureActionDescription)"
         lastGestureIgnoredReasonMenuItem.title = "Last gesture ignored reason: \(lastGestureIgnoredReasonDescription)"
+        [
+            rawMultitouchAvailableMenuItem,
+            rawDevicesFoundMenuItem,
+            rawActiveTouchesMenuItem,
+            lastRawCentroidDeltaMenuItem,
+            lastRawErrorMenuItem,
+            gestureProbeMenuItem
+        ].forEach { $0.isHidden = !showVerboseDiagnostics }
+        [
+            lastPublicEventTypeMenuItem,
+            lastPublicEventTimestampMenuItem,
+            lastPublicEventDeltaMenuItem,
+            lastScrollDeltaMenuItem,
+            lastScrollScrollingDeltaMenuItem,
+            accumulatedScrollDeltaMenuItem,
+            lastScrollPreciseMenuItem,
+            lastScrollDirectionInvertedMenuItem,
+            lastPublicEventPhaseMenuItem,
+            lastPublicEventMomentumPhaseMenuItem,
+            eventCountersMenuItem,
+            lastGestureEventMenuItem,
+            lastGestureActionMenuItem,
+            lastGestureIgnoredReasonMenuItem
+        ].forEach { $0.isHidden = !showPublicDiagnostics }
     }
 
     func handlePublicGestureEvent(
         _ input: PublicGestureEventInput,
-        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>
+        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, ImmediateAccessibilityWindowController>
     ) {
         gestureDiagnostics.record(input)
 
@@ -548,6 +635,7 @@ private extension AppDelegate {
             refreshDebugInfo()
             gestureProbeWindowController?.update(
                 publicSnapshot: gestureDiagnostics.snapshot,
+                movementDiagnostics: windowController.diagnostics,
                 rawStatus: rawMultitouchStatus,
                 rawDiagnostics: rawGestureRecognizer.diagnostics,
                 counters: rawDiagnosticsCounters(),
@@ -572,6 +660,7 @@ private extension AppDelegate {
 
         gestureProbeWindowController?.update(
             publicSnapshot: gestureDiagnostics.snapshot,
+            movementDiagnostics: windowController.diagnostics,
             rawStatus: rawMultitouchStatus,
             rawDiagnostics: rawGestureRecognizer.diagnostics,
             counters: rawDiagnosticsCounters(),
@@ -581,7 +670,7 @@ private extension AppDelegate {
 
     func handleRawTouchSample(
         _ sample: RawTouchSample,
-        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, AnimatedAccessibilityWindowController>
+        commandHandler: WindowCommandHandler<AccessibilityPermissionChecker, ImmediateAccessibilityWindowController>
     ) {
         rawCallbacksCount += 1
         if sample.activeTouchCount == 3 {
@@ -602,12 +691,17 @@ private extension AppDelegate {
         case .action(let action):
             lastRawGestureActionDescription = action.debugName
             lastRawGestureDescription = action.debugName
+            lastAcceptedRawGestureDescription = action.debugName
+            lastAcceptedRawDeltaDescription = lastRawCentroidDeltaDescription
+            lastAcceptedRawDurationDescription = formatTimestamp(rawGestureRecognizer.diagnostics.lastGestureDuration)
             lastRawGestureIgnoredReasonDescription = "none"
             rawRecognizedGesturesCount += 1
             if action == .leftHalf {
                 rawLeftGesturesCount += 1
             } else if action == .rightHalf {
                 rawRightGesturesCount += 1
+            } else if action == .maximize {
+                rawUpGesturesCount += 1
             }
             appendRawEvent(sample: sample, result: action.debugName)
             _ = commandHandler
@@ -624,12 +718,15 @@ private extension AppDelegate {
             if reason == .fingerCountChanged {
                 rawCanceledGesturesCount += 1
             }
-            appendRawEvent(sample: sample, result: reason.rawValue)
+            if sample.activeTouchCount == 3 || reason == .fingerCountChanged {
+                appendRawEvent(sample: sample, result: reason.rawValue)
+            }
             lastRawGestureIgnoredReasonDescription = reason.rawValue
             refreshDebugInfo()
         }
 
         gestureProbeWindowController?.scheduleUpdate(
+            movementDiagnostics: windowController.diagnostics,
             rawStatus: rawMultitouchStatus,
             rawDiagnostics: rawGestureRecognizer.diagnostics,
             counters: rawDiagnosticsCounters(),
@@ -643,10 +740,11 @@ private extension AppDelegate {
 
     func appendRawEvent(sample: RawTouchSample, result: String) {
         let event = String(
-            format: "%.3f fingers=%d dxdy=%@ result=%@",
+            format: "%.3f fingers=%d dxdy=%@ duration=%@ result=%@",
             sample.timestamp,
             sample.activeTouchCount,
             lastRawCentroidDeltaDescription,
+            formatTimestamp(rawGestureRecognizer.diagnostics.lastGestureDuration),
             result
         )
         rawEventRingBuffer.append(event)
@@ -661,9 +759,14 @@ private extension AppDelegate {
             recognized: rawRecognizedGesturesCount,
             left: rawLeftGesturesCount,
             right: rawRightGesturesCount,
+            up: rawUpGesturesCount,
             ignored: rawIgnoredGesturesCount,
             unsupportedFingerCount: rawUnsupportedFingerCountCount,
-            canceled: rawCanceledGesturesCount
+            canceled: rawCanceledGesturesCount,
+            lastAcceptedGesture: lastAcceptedRawGestureDescription,
+            lastAcceptedDelta: lastAcceptedRawDeltaDescription,
+            lastAcceptedDuration: lastAcceptedRawDurationDescription,
+            lastIgnoredReason: lastRawGestureIgnoredReasonDescription
         )
     }
 
@@ -694,6 +797,20 @@ private extension AppDelegate {
         }
 
         return value ? "yes" : "no"
+    }
+
+    func formatRect(_ rect: Rect?) -> String {
+        guard let rect else {
+            return "none"
+        }
+
+        return String(
+            format: "x=%.1f y=%.1f w=%.1f h=%.1f",
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height
+        )
     }
 
     func formatCounters(_ counters: GestureDiagnosticCounters) -> String {
@@ -773,12 +890,22 @@ private extension AppDelegate {
             action,
             options: WindowCommandOptions(
                 screenTarget: screenTarget,
-                animated: settings.animationEnabled,
-                animationDuration: settings.animationDuration
+                movementMode: .immediate
             )
         )
         show(result)
+        scheduleMovementDiagnosticsUpdate()
         return result
+    }
+
+    func scheduleMovementDiagnosticsUpdate() {
+        gestureProbeWindowController?.scheduleUpdate(
+            movementDiagnostics: windowController.diagnostics,
+            rawStatus: rawMultitouchStatus,
+            rawDiagnostics: rawGestureRecognizer.diagnostics,
+            counters: rawDiagnosticsCounters(),
+            events: rawEventRingBuffer
+        )
     }
 
     func rebuildRawRecognizer() {
@@ -787,12 +914,24 @@ private extension AppDelegate {
             dominanceRatio: settings.rawDominanceRatio,
             maxGestureDuration: 0.8,
             cooldown: settings.rawCooldown,
-            invertDirection: settings.invertGestureDirection
+            invertDirection: settings.invertGestureDirection,
+            invertVerticalDirection: invertRawVerticalDirection
         )
     }
 
     @objc func openSettings() {
-        let controller = settingsWindowController ?? SettingsWindowController(settings: settings)
+        if let controller = settingsWindowController,
+           controller.isWindowOpen {
+            controller.show()
+            return
+        }
+
+        let controller = SettingsWindowController(settings: settings)
+        controller.onClose = { [weak self] in
+            DispatchQueue.main.async {
+                self?.settingsWindowController = nil
+            }
+        }
         settingsWindowController = controller
         controller.show()
     }
@@ -801,7 +940,10 @@ private extension AppDelegate {
         let controller = gestureProbeWindowController ?? GestureProbeWindowController()
         gestureProbeWindowController = controller
         controller.onClose = { [weak self] in
-            self?.handleGestureProbeWindowClosed()
+            DispatchQueue.main.async {
+                self?.gestureProbeWindowController = nil
+                self?.handleGestureProbeWindowClosed()
+            }
         }
         if settings.gestureBackend != .public,
            publicGestureBackend == nil,
@@ -810,6 +952,7 @@ private extension AppDelegate {
         }
         controller.show(
             publicSnapshot: gestureDiagnostics.snapshot,
+            movementDiagnostics: windowController.diagnostics,
             rawStatus: rawMultitouchStatus,
             rawDiagnostics: rawGestureRecognizer.diagnostics,
             counters: rawDiagnosticsCounters(),
@@ -838,15 +981,25 @@ private struct RawDiagnosticsCounters {
     var recognized: Int
     var left: Int
     var right: Int
+    var up: Int
     var ignored: Int
     var unsupportedFingerCount: Int
     var canceled: Int
+    var lastAcceptedGesture: String
+    var lastAcceptedDelta: String
+    var lastAcceptedDuration: String
+    var lastIgnoredReason: String
 }
 
 private final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let settings: ToucherSettings
     private var window: NSWindow?
     private var sleeves: [ClosureSleeve] = []
+    var onClose: (() -> Void)?
+
+    var isWindowOpen: Bool {
+        window?.isVisible == true
+    }
 
     init(settings: ToucherSettings) {
         self.settings = settings
@@ -855,13 +1008,14 @@ private final class SettingsWindowController: NSObject, NSWindowDelegate {
     func show() {
         if window == nil {
             let window = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 380, height: 360),
+                contentRect: NSRect(x: 0, y: 0, width: 380, height: 400),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false
             )
             window.title = "Toucher Settings"
             window.delegate = self
+            window.isReleasedWhenClosed = false
             window.center()
             window.contentView = makeContentView()
             self.window = window
@@ -869,6 +1023,12 @@ private final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        sleeves.removeAll()
+        window = nil
+        onClose?()
     }
 
     private func makeContentView() -> NSView {
@@ -890,12 +1050,6 @@ private final class SettingsWindowController: NSObject, NSWindowDelegate {
         stack.addArrangedSubview(checkbox("Invert gesture direction", value: settings.invertGestureDirection) { [settings] in
             settings.invertGestureDirection = $0
         })
-        stack.addArrangedSubview(checkbox("Animation enabled (experimental)", value: settings.animationEnabled) { [settings] in
-            settings.animationEnabled = $0
-        })
-        stack.addArrangedSubview(numberField("Animation duration", value: settings.animationDuration) { [settings] in
-            settings.animationDuration = $0
-        })
         stack.addArrangedSubview(numberField("Raw gesture minimum distance", value: settings.rawMinDistance) { [settings] in
             settings.rawMinDistance = $0
         })
@@ -906,7 +1060,7 @@ private final class SettingsWindowController: NSObject, NSWindowDelegate {
             settings.rawCooldown = $0
         })
 
-        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 360))
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 400))
         stack.frame = view.bounds
         stack.autoresizingMask = [.width, .height]
         view.addSubview(stack)
@@ -988,6 +1142,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
 
     func show(
         publicSnapshot: GestureDiagnosticSnapshot,
+        movementDiagnostics: WindowMovementDiagnostics,
         rawStatus: RawMultitouchBackendStatus,
         rawDiagnostics: RawGestureDiagnosticSnapshot,
         counters: RawDiagnosticsCounters,
@@ -1002,6 +1157,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
             )
             window.title = "Toucher Gesture Diagnostics"
             window.delegate = self
+            window.isReleasedWhenClosed = false
             window.center()
 
             textView.isEditable = false
@@ -1015,6 +1171,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
 
         update(
             publicSnapshot: publicSnapshot,
+            movementDiagnostics: movementDiagnostics,
             rawStatus: rawStatus,
             rawDiagnostics: rawDiagnostics,
             counters: counters,
@@ -1025,6 +1182,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
     }
 
     func scheduleUpdate(
+        movementDiagnostics: WindowMovementDiagnostics,
         rawStatus: RawMultitouchBackendStatus,
         rawDiagnostics: RawGestureDiagnosticSnapshot,
         counters: RawDiagnosticsCounters,
@@ -1038,6 +1196,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
             guard let self else { return }
             self.update(
                 publicSnapshot: GestureDiagnosticSnapshot(),
+                movementDiagnostics: movementDiagnostics,
                 rawStatus: rawStatus,
                 rawDiagnostics: rawDiagnostics,
                 counters: counters,
@@ -1059,6 +1218,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
 
     func update(
         publicSnapshot: GestureDiagnosticSnapshot,
+        movementDiagnostics: WindowMovementDiagnostics,
         rawStatus: RawMultitouchBackendStatus,
         rawDiagnostics: RawGestureDiagnosticSnapshot,
         counters: RawDiagnosticsCounters,
@@ -1066,6 +1226,7 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
     ) {
         textView.string = Self.render(
             publicSnapshot: publicSnapshot,
+            movementDiagnostics: movementDiagnostics,
             rawStatus: rawStatus,
             rawDiagnostics: rawDiagnostics,
             counters: counters,
@@ -1078,11 +1239,14 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
         throttleTimer = nil
         pendingUpdate = nil
         window = nil
-        onClose?()
+        let closeHandler = onClose
+        onClose = nil
+        closeHandler?()
     }
 
     private static func render(
         publicSnapshot snapshot: GestureDiagnosticSnapshot,
+        movementDiagnostics: WindowMovementDiagnostics,
         rawStatus: RawMultitouchBackendStatus,
         rawDiagnostics: RawGestureDiagnosticSnapshot,
         counters rawCounters: RawDiagnosticsCounters,
@@ -1111,17 +1275,32 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
         Active touches: \(rawStatus.activeTouches)
         Last raw error: \(rawStatus.lastError ?? "none")
 
+        Movement:
+        Last movement mode: \(movementDiagnostics.lastMovementMode)
+        Last movement target frame: \(renderRect(movementDiagnostics.lastTargetFrame))
+        Last movement final readback frame: \(renderRect(movementDiagnostics.lastFinalReadbackFrame))
+        Last movement error: \(movementDiagnostics.lastMovementError ?? "none")
+
         Raw counters:
         Total raw callbacks count: \(rawCounters.callbacks)
         Total recognized gestures count: \(rawCounters.recognized)
         Left gestures count: \(rawCounters.left)
         Right gestures count: \(rawCounters.right)
+        Up gestures count: \(rawCounters.up)
         Ignored gestures count: \(rawCounters.ignored)
         Unsupported finger count count: \(rawCounters.unsupportedFingerCount)
         Canceled gestures count: \(rawCounters.canceled)
 
+        Raw last accepted:
+        Last accepted gesture: \(rawCounters.lastAcceptedGesture)
+        Last accepted dx/dy: \(rawCounters.lastAcceptedDelta)
+        Last accepted duration: \(rawCounters.lastAcceptedDuration)
+        Last ignored reason: \(rawCounters.lastIgnoredReason)
+        Active touches: \(rawStatus.activeTouches)
+
         Gesture timing:
         minHorizontalDistance: \(String(format: "%.3f", rawDiagnostics.minHorizontalDistance))
+        minVerticalDistance: \(String(format: "%.3f", rawDiagnostics.minVerticalDistance))
         dominanceRatio: \(String(format: "%.3f", rawDiagnostics.dominanceRatio))
         maxGestureDuration: \(String(format: "%.3f", rawDiagnostics.maxGestureDuration))
         cooldown: \(String(format: "%.3f", rawDiagnostics.cooldown))
@@ -1173,6 +1352,20 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
         }
 
         return String(format: "dx=%.3f, dy=%.3f", deltaX, deltaY)
+    }
+
+    private static func renderRect(_ rect: Rect?) -> String {
+        guard let rect else {
+            return "none"
+        }
+
+        return String(
+            format: "x=%.1f y=%.1f w=%.1f h=%.1f",
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height
+        )
     }
 
     private static func renderBool(_ value: Bool?) -> String {

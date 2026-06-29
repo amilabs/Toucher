@@ -106,6 +106,36 @@ final class GestureActionIntegrationTests: XCTestCase {
         XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 600, height: 800)])
     }
 
+    func testRawUpGestureUsesSameCommandPathAsSingleUpHotKeyAction() {
+        let recognizer = RawThreeFingerSwipeRecognizer(
+            minHorizontalDistance: 10,
+            dominanceRatio: 2,
+            maxGestureDuration: 0.8,
+            cooldown: 0.35
+        )
+        let windows = MockGestureWindowController(
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(
+            permissions: MockGesturePermissionChecker(hasAccessibilityPermission: true),
+            windows: windows
+        )
+
+        _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 100, timestamp: 1))
+        let recognition = recognizer.recognize(
+            RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 130, timestamp: 1.1)
+        )
+
+        guard case .action(let action) = recognition else {
+            return XCTFail("Expected raw up gesture action")
+        }
+
+        XCTAssertEqual(action, .maximize)
+        XCTAssertEqual(handler.perform(action), .moved(Rect(x: 0, y: 0, width: 1200, height: 800)))
+        XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 1200, height: 800)])
+    }
+
     func testIgnoredRawGestureDoesNotMoveWindow() {
         let recognizer = RawThreeFingerSwipeRecognizer(
             minHorizontalDistance: 10,

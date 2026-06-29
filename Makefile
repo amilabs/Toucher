@@ -29,7 +29,7 @@ build:
 	/usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $(BUNDLE_ID)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $(APP_NAME)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$(APP_BUNDLE)/Contents/Info.plist"
-	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.5.2" "$(APP_BUNDLE)/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.5.6" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$(APP_BUNDLE)/Contents/Info.plist"

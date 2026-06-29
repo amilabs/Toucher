@@ -2,7 +2,7 @@
 
 Toucher is a personal macOS menu bar app for fast window movement with hotkeys and experimental raw trackpad gestures.
 
-Current v0.5.2 behavior:
+Current v0.5.6 behavior:
 
 - Control + Shift + Left Arrow: move active window to left half of current visible screen.
 - Control + Shift + Right Arrow: move active window to right half of current visible screen.
@@ -10,8 +10,9 @@ Current v0.5.2 behavior:
 - Control + Shift + Up Arrow twice quickly: full-height centered one-third width.
 - Control + Shift + Down Arrow: restore previous frame.
 - Three-finger swipe left/right: move active window left/right using the raw multitouch backend.
+- Three-finger swipe up: maximize to the current visible screen.
 - Command with left/right hotkey or gesture: snap to the other or next screen.
-- Animation is experimental and disabled by default.
+- Window movement uses the immediate, known-good AX set-frame path. Stored animation settings are ignored for stability.
 
 Toucher is not intended for the App Store. The raw gesture backend uses private macOS `MultitouchSupport.framework`, isolated in `WindowGesturesMac`.
 

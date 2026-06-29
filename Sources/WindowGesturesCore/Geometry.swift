@@ -37,19 +37,30 @@ public enum WindowScreenTarget: Equatable, Sendable {
     case next
 }
 
+public enum WindowMovementMode: Equatable, Sendable {
+    case immediate
+}
+
 public struct WindowCommandOptions: Equatable, Sendable {
     public var screenTarget: WindowScreenTarget
-    public var animated: Bool
-    public var animationDuration: TimeInterval
+    public var movementMode: WindowMovementMode
 
     public init(
         screenTarget: WindowScreenTarget = .current,
-        animated: Bool = false,
-        animationDuration: TimeInterval = 0.25
+        animateWindowMovement: Bool = false,
+        animationDuration: TimeInterval = 0.25,
+        animationSteps: Int = 5
     ) {
         self.screenTarget = screenTarget
-        self.animated = animated
-        self.animationDuration = animationDuration
+        self.movementMode = .immediate
+    }
+
+    public init(
+        screenTarget: WindowScreenTarget = .current,
+        movementMode: WindowMovementMode
+    ) {
+        self.screenTarget = screenTarget
+        self.movementMode = movementMode
     }
 }
 
@@ -124,39 +135,6 @@ public enum ScreenSelector {
         return screens.max { lhs, rhs in
             lhs.frame.intersectionArea(with: windowFrame) < rhs.frame.intersectionArea(with: windowFrame)
         }
-    }
-}
-
-public enum AnimationPlanner {
-    public static func frames(
-        from start: Rect,
-        to end: Rect,
-        duration: TimeInterval,
-        frameInterval: TimeInterval = 1.0 / 60.0
-    ) -> [Rect] {
-        guard duration > 0 else {
-            return [end]
-        }
-
-        let steps = max(1, Int(ceil(duration / frameInterval)))
-        return (0...steps).map { step in
-            let progress = Double(step) / Double(steps)
-            return interpolate(from: start, to: end, progress: easeOut(progress))
-        }
-    }
-
-    public static func easeOut(_ progress: Double) -> Double {
-        let clamped = min(1, max(0, progress))
-        return 1 - pow(1 - clamped, 3)
-    }
-
-    private static func interpolate(from start: Rect, to end: Rect, progress: Double) -> Rect {
-        Rect(
-            x: start.x + (end.x - start.x) * progress,
-            y: start.y + (end.y - start.y) * progress,
-            width: start.width + (end.width - start.width) * progress,
-            height: start.height + (end.height - start.height) * progress
-        )
     }
 }
 

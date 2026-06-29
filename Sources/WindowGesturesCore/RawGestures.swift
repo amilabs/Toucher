@@ -18,7 +18,8 @@ public enum RawGestureIgnoredReason: String, Equatable, Sendable {
     case tracking
     case unsupportedFingerCount
     case fingerCountChanged
-    case vertical
+    case horizontal
+    case wrongDirection
     case diagonal
     case belowThreshold
     case tooSlow
@@ -33,6 +34,7 @@ public enum RawGestureRecognitionResult: Equatable, Sendable {
 
 public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
     public var minHorizontalDistance: Double
+    public var minVerticalDistance: Double
     public var dominanceRatio: Double
     public var maxGestureDuration: TimeInterval
     public var cooldown: TimeInterval
@@ -44,6 +46,7 @@ public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
 
     public init(
         minHorizontalDistance: Double,
+        minVerticalDistance: Double,
         dominanceRatio: Double,
         maxGestureDuration: TimeInterval,
         cooldown: TimeInterval,
@@ -54,6 +57,7 @@ public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
         lastRejectionReason: RawGestureIgnoredReason? = nil
     ) {
         self.minHorizontalDistance = minHorizontalDistance
+        self.minVerticalDistance = minVerticalDistance
         self.dominanceRatio = dominanceRatio
         self.maxGestureDuration = maxGestureDuration
         self.cooldown = cooldown
@@ -79,28 +83,35 @@ public final class RawThreeFingerSwipeRecognizer {
     }
 
     public let minHorizontalDistance: Double
+    public let minVerticalDistance: Double
     public let dominanceRatio: Double
     public let maxGestureDuration: TimeInterval
     public let cooldown: TimeInterval
     public let invertDirection: Bool
+    public let invertVerticalDirection: Bool
     private var state = State.idle
     private var lastTriggerTimestamp: TimeInterval?
     public private(set) var diagnostics: RawGestureDiagnosticSnapshot
 
     public init(
         minHorizontalDistance: Double = 0.08,
+        minVerticalDistance: Double? = nil,
         dominanceRatio: Double = 2.0,
         maxGestureDuration: TimeInterval = 0.8,
         cooldown: TimeInterval = 0.35,
-        invertDirection: Bool = false
+        invertDirection: Bool = false,
+        invertVerticalDirection: Bool = false
     ) {
         self.minHorizontalDistance = minHorizontalDistance
+        self.minVerticalDistance = minVerticalDistance ?? minHorizontalDistance
         self.dominanceRatio = dominanceRatio
         self.maxGestureDuration = maxGestureDuration
         self.cooldown = cooldown
         self.invertDirection = invertDirection
+        self.invertVerticalDirection = invertVerticalDirection
         self.diagnostics = RawGestureDiagnosticSnapshot(
             minHorizontalDistance: minHorizontalDistance,
+            minVerticalDistance: minVerticalDistance ?? minHorizontalDistance,
             dominanceRatio: dominanceRatio,
             maxGestureDuration: maxGestureDuration,
             cooldown: cooldown
@@ -109,16 +120,17 @@ public final class RawThreeFingerSwipeRecognizer {
 
     public func recognize(_ sample: RawTouchSample) -> RawGestureRecognitionResult {
         guard sample.activeTouchCount == 3 else {
-            let reason: RawGestureIgnoredReason
             switch state {
             case .idle:
-                reason = .unsupportedFingerCount
-            case .tracking, .completed:
-                reason = .fingerCountChanged
+                return .ignored(.unsupportedFingerCount)
+            case .tracking(let gesture):
+                state = .idle
+                recordRejected(.fingerCountChanged, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                return .ignored(.fingerCountChanged)
+            case .completed:
+                state = .idle
+                return .ignored(.unsupportedFingerCount)
             }
-            state = .idle
-            recordRejected(reason, startTimestamp: nil, endTimestamp: sample.timestamp)
-            return .ignored(reason)
         }
 
         switch state {
@@ -155,17 +167,35 @@ public final class RawThreeFingerSwipeRecognizer {
             let absX = abs(deltaX)
             let absY = abs(deltaY)
 
-            guard absX >= minHorizontalDistance else {
-                if absY >= minHorizontalDistance {
-                    recordRejected(.vertical, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                    return .ignored(.vertical)
-                }
-
+            let isHorizontalCandidate = absX >= minHorizontalDistance
+            let isVerticalCandidate = absY >= minVerticalDistance
+            guard isHorizontalCandidate || isVerticalCandidate else {
                 recordRejected(.belowThreshold, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.belowThreshold)
             }
 
-            guard absX >= absY * dominanceRatio else {
+            if isVerticalCandidate,
+               absY >= absX * dominanceRatio {
+                guard !isCoolingDown(at: sample.timestamp) else {
+                    state = .completed
+                    recordRejected(.cooldown, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                    return .ignored(.cooldown)
+                }
+
+                let isUpSwipe = invertVerticalDirection ? deltaY < 0 : deltaY > 0
+                guard isUpSwipe else {
+                    recordRejected(.wrongDirection, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                    return .ignored(.wrongDirection)
+                }
+
+                lastTriggerTimestamp = sample.timestamp
+                state = .completed
+                recordAccepted(startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                return .action(.maximize)
+            }
+
+            guard isHorizontalCandidate,
+                  absX >= absY * dominanceRatio else {
                 recordRejected(.diagonal, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.diagonal)
             }

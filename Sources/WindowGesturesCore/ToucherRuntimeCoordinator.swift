@@ -11,8 +11,9 @@ public struct ToucherSettingsSnapshot: Equatable, Sendable {
     public var gestureBackend: ToucherGestureBackendPreference
     public var enableDiagnostics: Bool
     public var invertGestureDirection: Bool
-    public var animationEnabled: Bool
+    public var animateWindowMovement: Bool
     public var animationDuration: TimeInterval
+    public var animationSteps: Int
     public var rawMinDistance: Double
     public var rawDominanceRatio: Double
     public var rawCooldown: TimeInterval
@@ -22,8 +23,9 @@ public struct ToucherSettingsSnapshot: Equatable, Sendable {
         gestureBackend: ToucherGestureBackendPreference = .raw,
         enableDiagnostics: Bool = false,
         invertGestureDirection: Bool = false,
-        animationEnabled: Bool = false,
+        animateWindowMovement: Bool = false,
         animationDuration: TimeInterval = 0.25,
+        animationSteps: Int = 5,
         rawMinDistance: Double = 0.08,
         rawDominanceRatio: Double = 2.0,
         rawCooldown: TimeInterval = 0.35
@@ -32,8 +34,9 @@ public struct ToucherSettingsSnapshot: Equatable, Sendable {
         self.gestureBackend = gestureBackend
         self.enableDiagnostics = enableDiagnostics
         self.invertGestureDirection = invertGestureDirection
-        self.animationEnabled = animationEnabled
-        self.animationDuration = min(0.5, max(0, animationDuration))
+        self.animateWindowMovement = animateWindowMovement
+        self.animationDuration = min(0.5, max(0.05, animationDuration))
+        self.animationSteps = min(12, max(2, animationSteps))
         self.rawMinDistance = max(0.001, rawMinDistance)
         self.rawDominanceRatio = max(1, rawDominanceRatio)
         self.rawCooldown = min(2, max(0, rawCooldown))
@@ -97,8 +100,12 @@ public final class ToucherRuntimeCoordinator<ActionHandler: WindowActionHandling
         currentBackend = backend
     }
 
-    public func setAnimationEnabled(_ isEnabled: Bool) {
-        settings.animationEnabled = isEnabled
+    public func setAnimateWindowMovement(_ isEnabled: Bool) {
+        settings.animateWindowMovement = isEnabled
+    }
+
+    public var movementMode: WindowMovementMode {
+        .immediate
     }
 
     @discardableResult
@@ -114,8 +121,7 @@ public final class ToucherRuntimeCoordinator<ActionHandler: WindowActionHandling
             action,
             options: WindowCommandOptions(
                 screenTarget: screenTarget,
-                animated: settings.animationEnabled,
-                animationDuration: settings.animationDuration
+                movementMode: movementMode
             )
         )
     }
