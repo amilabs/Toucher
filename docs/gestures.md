@@ -4,7 +4,7 @@ Toucher keeps gesture input behind the `GestureMonitoring` protocol so hotkeys, 
 
 ## Raw multitouch backend
 
-`RawMultitouchBackend` is the default v0.5.6 backend. It uses private macOS `MultitouchSupport.framework` to detect exact three-finger horizontal and upward swipes.
+`RawMultitouchBackend` is the default v0.5.7 backend. It uses private macOS `MultitouchSupport.framework` to detect exact three-finger horizontal and upward swipes.
 
 Raw gesture mapping:
 
@@ -36,7 +36,7 @@ Public NSEvent diagnostics are off by default in normal raw mode to reduce idle 
 
 ## Backend selection
 
-Use Settings or set `WINDOWGESTURES_GESTURE_BACKEND` before launch:
+Normal Settings intentionally does not expose technical backend selection. For debug runs, set `WINDOWGESTURES_GESTURE_BACKEND` before launch:
 
 - `raw`: use raw multitouch.
 - `public`: use public NSEvent diagnostics.
@@ -55,7 +55,7 @@ Hotkeys remain active regardless of gesture backend state.
 - Quit BetterTouchTool for clean raw gesture testing.
 - Disable conflicting macOS Trackpad > More Gestures actions.
 - Disable System Settings > Accessibility > Pointer Control > Trackpad Options > Three Finger Drag.
-- Confirm the menu shows `Raw multitouch available: yes` and `Raw multitouch active: yes`.
-- If raw is unavailable, record `Last raw error`.
+- Confirm Gesture Diagnostics shows `Raw multitouch available: yes` and `Raw multitouch active: yes`.
+- If raw is unavailable, record `Last raw error` from Gesture Diagnostics.
 - If active touches are not exactly `3`, the recognizer ignores or cancels the gesture.
 - Diagnostics mode can increase CPU because it may enable public NSEvent probes and a diagnostics window. Close diagnostics for normal idle checks.

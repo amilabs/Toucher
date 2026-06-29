@@ -23,9 +23,9 @@ public struct ToucherSettingsSnapshot: Equatable, Sendable {
         gestureBackend: ToucherGestureBackendPreference = .raw,
         enableDiagnostics: Bool = false,
         invertGestureDirection: Bool = false,
-        animateWindowMovement: Bool = false,
-        animationDuration: TimeInterval = 0.25,
-        animationSteps: Int = 5,
+        animateWindowMovement: Bool = true,
+        animationDuration: TimeInterval = 0.10,
+        animationSteps: Int = 32,
         rawMinDistance: Double = 0.08,
         rawDominanceRatio: Double = 2.0,
         rawCooldown: TimeInterval = 0.35
@@ -35,8 +35,8 @@ public struct ToucherSettingsSnapshot: Equatable, Sendable {
         self.enableDiagnostics = enableDiagnostics
         self.invertGestureDirection = invertGestureDirection
         self.animateWindowMovement = animateWindowMovement
-        self.animationDuration = min(0.5, max(0.05, animationDuration))
-        self.animationSteps = min(12, max(2, animationSteps))
+        self.animationDuration = min(0.60, max(0.02, animationDuration))
+        self.animationSteps = min(32, max(3, animationSteps))
         self.rawMinDistance = max(0.001, rawMinDistance)
         self.rawDominanceRatio = max(1, rawDominanceRatio)
         self.rawCooldown = min(2, max(0, rawCooldown))
@@ -105,7 +105,9 @@ public final class ToucherRuntimeCoordinator<ActionHandler: WindowActionHandling
     }
 
     public var movementMode: WindowMovementMode {
-        .immediate
+        settings.animateWindowMovement
+            ? .discreteSteps(totalStepCount: settings.animationSteps, totalDuration: settings.animationDuration)
+            : .immediate
     }
 
     @discardableResult

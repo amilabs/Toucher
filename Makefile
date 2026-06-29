@@ -1,5 +1,8 @@
 APP_NAME := Toucher
 BUNDLE_ID := com.amilabs.Toucher
+APP_VERSION := 0.5.7
+BUILD_DATE := $(shell date "+%Y-%m-%d %H:%M")
+REPOSITORY_URL := https://github.com/amilabs/Toucher
 SIGN_IDENTITY ?= WindowGestures Local Dev
 EXECUTABLE_NAME := WindowGesturesApp
 CONFIGURATION ?= debug
@@ -12,7 +15,7 @@ INSTALL_APP ?= $(HOME)/Applications/$(APP_NAME).app
 INSTALL_DIR = $(dir $(INSTALL_APP))
 WINDOWGESTURES_GESTURE_BACKEND ?=
 
-.PHONY: test build check-sign-identity install-debug run-debug reset-accessibility debug-verify-bundle debug-signing-info debug-cpu-note check clean
+.PHONY: test build check-sign-identity install-debug run-debug reset-accessibility debug-reset-accessibility debug-verify-bundle debug-signing-info debug-cpu-note check clean
 
 test:
 	swift test
@@ -29,8 +32,10 @@ build:
 	/usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $(BUNDLE_ID)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleExecutable string $(APP_NAME)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundlePackageType string APPL" "$(APP_BUNDLE)/Contents/Info.plist"
-	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 0.5.6" "$(APP_BUNDLE)/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $(APP_VERSION)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1" "$(APP_BUNDLE)/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Add :ToucherBuildDate string $(BUILD_DATE)" "$(APP_BUNDLE)/Contents/Info.plist"
+	/usr/libexec/PlistBuddy -c "Add :ToucherRepositoryURL string $(REPOSITORY_URL)" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$(APP_BUNDLE)/Contents/Info.plist"
 	/usr/libexec/PlistBuddy -c "Add :NSPrincipalClass string NSApplication" "$(APP_BUNDLE)/Contents/Info.plist"
@@ -56,6 +61,7 @@ install-debug: check-sign-identity
 	ditto "$(DEBUG_APP_BUNDLE)" "$(INSTALL_APP)"
 	chmod +x "$(INSTALL_APP)/Contents/MacOS/$(APP_NAME)"
 	codesign --force --deep --sign "$(SIGN_IDENTITY)" "$(INSTALL_APP)"
+	touch "$(INSTALL_APP)"
 
 run-debug:
 	$(MAKE) install-debug
@@ -70,6 +76,8 @@ reset-accessibility:
 	@echo "App bundle id: $(BUNDLE_ID)"; \
 	tccutil reset Accessibility "$(BUNDLE_ID)"; \
 	echo "If Toucher still appears stale, remove and re-add $(INSTALL_APP) in System Settings > Privacy & Security > Accessibility."
+
+debug-reset-accessibility: reset-accessibility
 
 debug-verify-bundle: install-debug
 	@echo "defaults read $(INSTALL_APP)/Contents/Info:"; \

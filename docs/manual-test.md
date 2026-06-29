@@ -1,6 +1,6 @@
 # Toucher manual test
 
-## v0.5.6 smoke test
+## v0.5.7 release smoke test
 
 Fresh start:
 
@@ -10,16 +10,21 @@ defaults delete com.amilabs.Toucher || true
 make run-debug
 ```
 
-Expected menu state:
+Expected defaults:
 
-- `Toucher version: 0.5.6`
-- `Accessibility trusted: yes`
-- `App bundle id: com.amilabs.Toucher`
-- `App bundle path: ~/Applications/Toucher.app`
-- `Gesture backend: raw multitouch`
-- `Raw multitouch active: yes`
-- `Last movement mode: immediate`
-- no animation setting is visible in Settings
+- Animate window movement is enabled.
+- Animation steps is `32`.
+- Animation duration is `0.10s`.
+
+Expected main menu:
+
+- compact menu, icon only in the menu bar
+- first item is `About Toucher`
+- `Settings` when Accessibility is trusted
+- `⚠ Settings — Accessibility required` when Accessibility is not trusted
+- `Quit Toucher`
+
+The main menu should not show long debug rows such as bundle path, raw callback counters, movement frame details, skipped steps, target frame, public NSEvent diagnostics, Gesture Diagnostics, or Accessibility Settings. The only status warning allowed in the menu is the Settings title changing to `⚠ Settings — Accessibility required`.
 
 If Accessibility is not trusted, run:
 
@@ -27,7 +32,15 @@ If Accessibility is not trusted, run:
 tccutil reset Accessibility com.amilabs.Toucher
 ```
 
-Then remove old WindowGestures entries and add `~/Applications/Toucher.app` in System Settings > Privacy & Security > Accessibility. Quit and reopen Toucher after granting permission.
+Then remove old WindowGestures entries and add `~/Applications/Toucher.app` in System Settings > Privacy & Security > Accessibility. Toucher should recover after permission is granted without an app restart.
+
+After bundle id, signing, or path changes, macOS may keep a stale Accessibility entry. Do not reset automatically during normal use. For release smoke testing, reset manually with:
+
+```bash
+make debug-reset-accessibility
+```
+
+Then relaunch Toucher only if macOS still reports stale TCC state after re-adding `~/Applications/Toucher.app` in System Settings > Privacy & Security > Accessibility.
 
 ## Settings stability
 
@@ -42,21 +55,37 @@ Then remove old WindowGestures entries and add `~/Applications/Toucher.app` in S
 
 Visible settings:
 
-- Enable gestures
-- Gesture backend
-- Enable diagnostics/probe
-- Invert gesture direction
-- Raw gesture minimum distance
-- Raw gesture dominance ratio
-- Raw gesture cooldown
+- Enable trackpad gestures
+- Animate window movement
+- Animation steps
+- Animation duration
+- Accessibility status
+- Accessibility Settings…
+- Gesture Diagnostics…
+
+Technical backend, raw threshold, and public probe options belong in Gesture Diagnostics or internal defaults, not normal Settings.
+
+## About Toucher
+
+1. Open `About Toucher`.
+2. Confirm it shows:
+   - Toucher
+   - Version `0.5.7`
+   - build date
+   - `GitHub Repository`
+   - no Bundle ID
+3. Click the repository link.
+4. Confirm it opens GitHub in the default browser.
+5. Close and reopen About Toucher.
+6. App must not crash.
 
 ## Gesture and hotkey test
 
 1. Open a normal resizable app window, such as TextEdit or Finder.
 2. Press Control + Shift + Left Arrow.
-3. Confirm the active window moves immediately to the left half.
+3. Confirm the active window moves to the left half.
 4. Press Control + Shift + Right Arrow.
-5. Confirm the active window moves immediately to the right half.
+5. Confirm the active window moves to the right half.
 6. Press Control + Shift + Up Arrow once.
 7. Confirm the active window maximizes to the visible frame.
 8. Press Control + Shift + Up Arrow twice quickly.
@@ -64,13 +93,59 @@ Visible settings:
 10. Press Control + Shift + Down Arrow.
 11. Confirm the window restores to its original frame.
 12. Swipe exactly three fingers left.
-13. Confirm the active window moves immediately to the left half.
+13. Confirm the active window moves to the left half.
 14. Swipe exactly three fingers right.
-15. Confirm the active window moves immediately to the right half.
+15. Confirm the active window moves to the right half.
 16. Swipe exactly three fingers up.
 17. Confirm the window maximizes to the full visible screen.
 
 Note: three-finger up and Control + Shift + Up both maximize. Control + Shift + Up twice quickly is the separate centered one-third-width action.
+
+If Settings shows Accessibility as not enabled while Toucher is visibly enabled in System Settings, reset TCC manually, re-add Toucher, and retry a real hotkey. Relaunch only if macOS still reports stale TCC state. Unit tests cannot fully validate real TCC permission state.
+
+## Accessibility false-to-true recovery
+
+1. Start Toucher with Accessibility enabled.
+2. Open the menu.
+3. Confirm it shows only `About Toucher`, `Settings`, and `Quit Toucher`.
+4. Press Control + Shift + Left Arrow.
+5. Confirm the window moves.
+6. Disable Toucher in System Settings > Privacy & Security > Accessibility.
+7. Open the menu.
+8. Confirm it shows `About Toucher`, `⚠ Settings — Accessibility required`, and `Quit Toucher`.
+9. Click `⚠ Settings — Accessibility required`.
+10. Confirm Settings opens and System Access shows `Accessibility: Not enabled` with the inline warning visible.
+11. Press Control + Shift + Left Arrow or perform a three-finger left swipe.
+12. Confirm the window does not move and the app remains responsive.
+13. Click `Gesture Diagnostics…` in Settings and confirm:
+    - Accessibility trusted: no
+    - Waiting for accessibility: yes
+    - Last AX error: accessibilityPermissionMissing
+14. Enable Toucher again in Accessibility settings.
+15. Do not restart Toucher.
+16. Return to Settings.
+17. Confirm System Access updates to `Accessibility: Enabled` and the warning disappears.
+18. Press Control + Shift + Right Arrow and perform a three-finger right swipe.
+19. Confirm movement works without restart.
+20. Open the menu and confirm it shows `About Toucher`, `Settings`, and `Quit Toucher`.
+21. Open Gesture Diagnostics from Settings and confirm:
+    - Accessibility trusted: yes
+    - Last accessibility transition: untrustedToTrusted
+
+Toucher temporarily polls Accessibility trust only while untrusted/waiting, then stops polling after trust returns.
+
+## Coordinate smoke test
+
+On macOS 15.1.1 or later:
+
+1. Press Control + Shift + Left Arrow.
+2. Press Control + Shift + Right Arrow.
+3. Press Control + Shift + Up Arrow.
+4. Press Control + Shift + Up Arrow twice quickly.
+5. Press Control + Shift + Down Arrow.
+6. Confirm every target stays fully inside the selected screen visible height.
+7. Repeat on an external monitor if available.
+8. If any target is wrong, open Settings > Gesture Diagnostics and copy the Screen Geometry Debug Info block.
 
 ## Raw gesture rejection
 
@@ -97,22 +172,29 @@ Note: three-finger up and Control + Shift + Up both maximize. Control + Shift + 
 
 ## Gesture diagnostics
 
-1. Open Gesture Diagnostics.
-2. Close Gesture Diagnostics.
-3. Open Gesture Diagnostics again.
-4. App must not crash.
-5. Perform three-finger left, right, and up gestures.
-6. Confirm these counters update:
+1. Open Settings.
+2. Click `Gesture Diagnostics…`.
+3. Close Gesture Diagnostics.
+4. Open Gesture Diagnostics again from Settings.
+5. App must not crash.
+6. Perform three-finger left, right, and up gestures.
+7. Confirm these counters update:
    - total raw callbacks
    - total recognized gestures
    - left gestures
    - right gestures
    - up gestures
-7. Confirm Last accepted gesture, Last accepted dx/dy, and Last accepted duration update.
-8. Move with two or four fingers.
-9. Confirm unsupported finger count increases but Last 10 raw events are not filled with continuous two-finger/four-finger noise.
-10. Confirm movement diagnostics show:
-   - last movement mode: immediate
+8. Confirm Last accepted gesture, Last accepted dx/dy, and Last accepted duration update.
+9. Move with two or four fingers.
+10. Confirm unsupported finger count increases but Last 10 raw events are not filled with continuous two-finger/four-finger noise.
+11. Confirm movement diagnostics show:
+   - last movement mode
+   - movement kind
+   - animation steps setting
+   - requested duration
+   - actual elapsed duration
+   - steps planned/applied/skipped
+   - fallback used
    - target frame
    - final readback frame if available
    - movement error

@@ -20,6 +20,10 @@ public final class AccessibilityWindowController: WindowControlling {
             &value
         )
 
+        if result == .apiDisabled {
+            throw WindowMovementError.accessibilityPermissionMissing
+        }
+
         guard result == .success, let window = value else {
             throw WindowMovementError.noFocusedWindow
         }
@@ -47,17 +51,7 @@ public final class AccessibilityWindowController: WindowControlling {
     }
 
     public func screens() throws -> [ScreenFrame] {
-        let screens = NSScreen.screens
-        guard !screens.isEmpty else {
-            throw WindowMovementError.failedToReadWindowFrame
-        }
-
-        return screens.map { screen in
-            ScreenFrame(
-                frame: accessibilityFrame(for: screen),
-                visibleFrame: accessibilityVisibleFrame(for: screen)
-            )
-        }
+        try appKitScreens()
     }
 
     public func frame(for window: AXUIElement) throws -> Rect {
@@ -65,6 +59,69 @@ public final class AccessibilityWindowController: WindowControlling {
     }
 
     public func move(_ window: AXUIElement, to frame: Rect) throws {
+        let axFrame = try accessibilityFrame(fromAppKitFrame: frame)
+        try moveAccessibilityFrame(window, to: axFrame)
+    }
+
+    public func restoreIdentifier(for window: AXUIElement) -> String? {
+        String(CFHash(window))
+    }
+
+    public func screenGeometryDebugInfo(actionTargetFrame: Rect? = nil) -> String {
+        let screens = (try? appKitScreens()) ?? []
+        let desktopUnion = ScreenGeometry.desktopUnion(for: screens)
+        let converter = desktopUnion.map(AccessibilityCoordinateConverter.init(desktopUnion:))
+        let focused = try? focusedWindow()
+        let axFrame = focused.flatMap { try? rawAccessibilityFrame(of: $0) }
+        let appKitFrame = axFrame.flatMap { converter?.appKitRect(fromAccessibilityRect: $0) }
+        let selectedScreen = appKitFrame.flatMap { ScreenSelector.currentScreen(for: $0, screens: screens) }
+        let axTarget = actionTargetFrame.flatMap { converter?.accessibilityRect(fromAppKitRect: $0) }
+        let processInfo = ProcessInfo.processInfo
+        let os = processInfo.operatingSystemVersion
+
+        func render(_ rect: Rect?) -> String {
+            guard let rect else {
+                return "none"
+            }
+
+            return String(format: "x=%.1f y=%.1f w=%.1f h=%.1f", rect.x, rect.y, rect.width, rect.height)
+        }
+
+        let screenLines = screens.enumerated().map { index, screen in
+            "screen[\(index)] frame=\(render(screen.frame)) visibleFrame=\(render(screen.visibleFrame))"
+        }.joined(separator: "\n")
+
+        return """
+        macOS version: \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)
+        screens:
+        \(screenLines.isEmpty ? "none" : screenLines)
+        desktopUnion: \(render(desktopUnion))
+        active window AX frame: \(render(axFrame))
+        active window AppKit frame: \(render(appKitFrame))
+        selected screen frame: \(render(selectedScreen?.frame))
+        selected screen visibleFrame: \(render(selectedScreen?.visibleFrame))
+        computed AppKit target frame: \(render(actionTargetFrame))
+        computed AX target frame: \(render(axTarget))
+        """
+    }
+}
+
+private extension AccessibilityWindowController {
+    func appKitScreens() throws -> [ScreenFrame] {
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else {
+            throw WindowMovementError.failedToReadWindowFrame
+        }
+
+        return screens.map { screen in
+            ScreenFrame(
+                frame: appKitFrame(screen.frame),
+                visibleFrame: appKitFrame(screen.visibleFrame)
+            )
+        }
+    }
+
+    func moveAccessibilityFrame(_ window: AXUIElement, to frame: Rect) throws {
         var position = CGPoint(x: frame.x, y: frame.y)
         var size = CGSize(width: frame.width, height: frame.height)
 
@@ -86,6 +143,10 @@ public final class AccessibilityWindowController: WindowControlling {
             &sizeSettable
         )
 
+        if positionSettableResult == .apiDisabled || sizeSettableResult == .apiDisabled {
+            throw WindowMovementError.accessibilityPermissionMissing
+        }
+
         guard positionSettableResult == .success,
               sizeSettableResult == .success,
               positionSettable.boolValue,
@@ -99,6 +160,10 @@ public final class AccessibilityWindowController: WindowControlling {
             positionValue
         )
 
+        if positionResult == .apiDisabled {
+            throw WindowMovementError.accessibilityPermissionMissing
+        }
+
         guard positionResult == .success else {
             throw WindowMovementError.failedToSetWindowFrame
         }
@@ -109,22 +174,23 @@ public final class AccessibilityWindowController: WindowControlling {
             sizeValue
         )
 
+        if sizeResult == .apiDisabled {
+            throw WindowMovementError.accessibilityPermissionMissing
+        }
+
         guard sizeResult == .success else {
             throw WindowMovementError.failedToSetWindowFrame
         }
     }
 
-    public func restoreIdentifier(for window: AXUIElement) -> String? {
-        String(CFHash(window))
-    }
-}
-
-private extension AccessibilityWindowController {
     func frame(of window: AXUIElement) throws -> Rect {
-        guard let position = pointAttribute(kAXPositionAttribute, of: window),
-              let size = sizeAttribute(kAXSizeAttribute, of: window) else {
-            throw WindowMovementError.failedToReadWindowFrame
-        }
+        let axFrame = try rawAccessibilityFrame(of: window)
+        return try appKitFrame(fromAccessibilityFrame: axFrame)
+    }
+
+    func rawAccessibilityFrame(of window: AXUIElement) throws -> Rect {
+        let position = try pointAttribute(kAXPositionAttribute, of: window)
+        let size = try sizeAttribute(kAXSizeAttribute, of: window)
 
         return Rect(
             x: position.x,
@@ -134,15 +200,39 @@ private extension AccessibilityWindowController {
         )
     }
 
-    func pointAttribute(_ attribute: String, of element: AXUIElement) -> CGPoint? {
+    func accessibilityFrame(fromAppKitFrame frame: Rect) throws -> Rect {
+        let screens = try appKitScreens()
+        guard let desktopUnion = ScreenGeometry.desktopUnion(for: screens) else {
+            throw WindowMovementError.failedToReadWindowFrame
+        }
+
+        return AccessibilityCoordinateConverter(desktopUnion: desktopUnion)
+            .accessibilityRect(fromAppKitRect: frame)
+    }
+
+    func appKitFrame(fromAccessibilityFrame frame: Rect) throws -> Rect {
+        let screens = try appKitScreens()
+        guard let desktopUnion = ScreenGeometry.desktopUnion(for: screens) else {
+            throw WindowMovementError.failedToReadWindowFrame
+        }
+
+        return AccessibilityCoordinateConverter(desktopUnion: desktopUnion)
+            .appKitRect(fromAccessibilityRect: frame)
+    }
+
+    func pointAttribute(_ attribute: String, of element: AXUIElement) throws -> CGPoint {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+
+        if result == .apiDisabled {
+            throw WindowMovementError.accessibilityPermissionMissing
+        }
 
         guard result == .success,
               let axValue = value,
               CFGetTypeID(axValue) == AXValueGetTypeID(),
               AXValueGetType(axValue as! AXValue) == .cgPoint else {
-            return nil
+            throw WindowMovementError.failedToReadWindowFrame
         }
 
         var point = CGPoint.zero
@@ -150,15 +240,19 @@ private extension AccessibilityWindowController {
         return point
     }
 
-    func sizeAttribute(_ attribute: String, of element: AXUIElement) -> CGSize? {
+    func sizeAttribute(_ attribute: String, of element: AXUIElement) throws -> CGSize {
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+
+        if result == .apiDisabled {
+            throw WindowMovementError.accessibilityPermissionMissing
+        }
 
         guard result == .success,
               let axValue = value,
               CFGetTypeID(axValue) == AXValueGetTypeID(),
               AXValueGetType(axValue as! AXValue) == .cgSize else {
-            return nil
+            throw WindowMovementError.failedToReadWindowFrame
         }
 
         var size = CGSize.zero
@@ -166,31 +260,12 @@ private extension AccessibilityWindowController {
         return size
     }
 
-    func accessibilityVisibleFrame(for screen: NSScreen) -> Rect {
-        let visibleFrame = screen.visibleFrame
-        let globalMaxY = globalScreenMaxY()
-
-        return Rect(
-            x: visibleFrame.minX,
-            y: globalMaxY - visibleFrame.maxY,
-            width: visibleFrame.width,
-            height: visibleFrame.height
+    func appKitFrame(_ rect: NSRect) -> Rect {
+        Rect(
+            x: rect.minX,
+            y: rect.minY,
+            width: rect.width,
+            height: rect.height
         )
-    }
-
-    func accessibilityFrame(for screen: NSScreen) -> Rect {
-        let screenFrame = screen.frame
-        let globalMaxY = globalScreenMaxY()
-
-        return Rect(
-            x: screenFrame.minX,
-            y: globalMaxY - screenFrame.maxY,
-            width: screenFrame.width,
-            height: screenFrame.height
-        )
-    }
-
-    func globalScreenMaxY() -> CGFloat {
-        NSScreen.screens.map(\.frame.maxY).max() ?? NSScreen.main?.frame.maxY ?? 0
     }
 }

@@ -2,10 +2,10 @@ import XCTest
 @testable import WindowGesturesCore
 
 final class ToucherRuntimeCoordinatorTests: XCTestCase {
-    func testDefaultSettingsDisableWindowAnimation() {
-        XCTAssertFalse(ToucherSettingsSnapshot().animateWindowMovement)
-        XCTAssertEqual(ToucherSettingsSnapshot().animationDuration, 0.25)
-        XCTAssertEqual(ToucherSettingsSnapshot().animationSteps, 5)
+    func testDefaultSettingsEnableWindowAnimation() {
+        XCTAssertTrue(ToucherSettingsSnapshot().animateWindowMovement)
+        XCTAssertEqual(ToucherSettingsSnapshot().animationDuration, 0.10)
+        XCTAssertEqual(ToucherSettingsSnapshot().animationSteps, 32)
     }
 
     func testApplySettingsStopsOldBackendBeforeStartingNewBackend() {
@@ -91,10 +91,10 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.settings.animateWindowMovement, true)
     }
 
-    func testHandleActionIgnoresAnimationSettingsAndUsesImmediateMovement() {
+    func testHandleActionUsesDiscreteMovementWhenAnimationIsEnabled() {
         let handler = MockActionHandler()
         let coordinator = ToucherRuntimeCoordinator(
-            settings: ToucherSettingsSnapshot(animateWindowMovement: true, animationDuration: 0.5, animationSteps: 12),
+            settings: ToucherSettingsSnapshot(animateWindowMovement: true, animationDuration: 0.02, animationSteps: 32),
             actionHandler: handler,
             rawBackend: MockGestureBackend(name: "raw", recorder: LifecycleRecorder()),
             publicBackend: MockGestureBackend(name: "public", recorder: LifecycleRecorder())
@@ -104,7 +104,23 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(handler.actions, [.leftHalf])
         XCTAssertEqual(handler.options, [
-            WindowCommandOptions(screenTarget: .next, movementMode: .immediate)
+            WindowCommandOptions(screenTarget: .next, movementMode: .discreteSteps(totalStepCount: 32, totalDuration: 0.02))
+        ])
+    }
+
+    func testHandleActionUsesImmediateMovementWhenAnimationIsDisabled() {
+        let handler = MockActionHandler()
+        let coordinator = ToucherRuntimeCoordinator(
+            settings: ToucherSettingsSnapshot(animateWindowMovement: false),
+            actionHandler: handler,
+            rawBackend: MockGestureBackend(name: "raw", recorder: LifecycleRecorder()),
+            publicBackend: MockGestureBackend(name: "public", recorder: LifecycleRecorder())
+        )
+
+        _ = coordinator.handleAction(.rightHalf)
+
+        XCTAssertEqual(handler.options, [
+            WindowCommandOptions(movementMode: .immediate)
         ])
     }
 
@@ -135,8 +151,8 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
             rawCooldown: 5
         )
 
-        XCTAssertEqual(snapshot.animationDuration, 0.5)
-        XCTAssertEqual(snapshot.animationSteps, 12)
+        XCTAssertEqual(snapshot.animationDuration, 0.60)
+        XCTAssertEqual(snapshot.animationSteps, 32)
         XCTAssertEqual(snapshot.rawMinDistance, 0.001)
         XCTAssertEqual(snapshot.rawDominanceRatio, 1)
         XCTAssertEqual(snapshot.rawCooldown, 2)
@@ -145,8 +161,8 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
     func testAnimationDurationAndStepsHaveMinimumClamp() {
         let snapshot = ToucherSettingsSnapshot(animationDuration: 0, animationSteps: 1)
 
-        XCTAssertEqual(snapshot.animationDuration, 0.05)
-        XCTAssertEqual(snapshot.animationSteps, 2)
+        XCTAssertEqual(snapshot.animationDuration, 0.02)
+        XCTAssertEqual(snapshot.animationSteps, 3)
     }
 }
 

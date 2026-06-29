@@ -24,7 +24,7 @@ final class ScreenSelectorTests: XCTestCase {
         )
     }
 
-    func testPartiallyAcrossScreensUsesCenterRuleBeforeIntersection() {
+    func testPartiallyAcrossScreensUsesLargestIntersection() {
         let window = Rect(x: 1300, y: 100, width: 400, height: 300)
 
         XCTAssertEqual(

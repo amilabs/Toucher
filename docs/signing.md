@@ -60,7 +60,7 @@ Then open System Settings > Privacy & Security > Accessibility:
 1. Remove old WindowGestures entries.
 2. Remove entries pointing to `.build/debug/WindowGestures.app`, `/Applications/WindowGestures.app`, or `~/Applications/WindowGestures.app`.
 3. Add `~/Applications/Toucher.app`.
-4. Quit and reopen Toucher.
+4. Toucher should recover without a restart after Accessibility is enabled. If macOS still reports stale TCC state, quit and reopen Toucher as a fallback.
 
 ## Inspect signing
 

@@ -85,8 +85,9 @@ The app must check Accessibility permission before trying to move windows.
 If permission is missing:
 
 - do not crash
-- show a clear status
-- provide an `Open Accessibility Settings` action
+- show a clear status in Settings and diagnostics
+- provide an `Accessibility Settings…` action in Settings
+- recover when `AXIsProcessTrusted()` changes from false to true without requiring an app restart
 
 ## CPU
 

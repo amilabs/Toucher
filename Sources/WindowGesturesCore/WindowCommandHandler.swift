@@ -87,6 +87,6 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
         to frame: Rect,
         options: WindowCommandOptions
     ) throws {
-        try windows.move(window, to: frame)
+        try windows.move(window, to: frame, movementMode: options.movementMode)
     }
 }

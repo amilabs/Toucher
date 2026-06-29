@@ -17,6 +17,25 @@ final class WindowCommandHandlerTests: XCTestCase {
         XCTAssertTrue(windows.movedFrames.isEmpty)
     }
 
+    func testActionPathRechecksAccessibilityPermissionEachTime() {
+        let permissions = MutablePermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let firstResult = handler.perform(.leftHalf)
+        permissions.hasAccessibilityPermission = false
+        let secondResult = handler.perform(.rightHalf)
+
+        XCTAssertEqual(firstResult, .moved(Rect(x: 0, y: 0, width: 500, height: 800)))
+        XCTAssertEqual(secondResult, .failed(.accessibilityPermissionMissing))
+        XCTAssertEqual(permissions.readCount, 2)
+        XCTAssertEqual(windows.moveCallCount, 1)
+    }
+
     func testNoActionIsExecutedIfNoFocusedApplicationExists() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
@@ -94,6 +113,22 @@ final class WindowCommandHandlerTests: XCTestCase {
         XCTAssertTrue(windows.movedFrames.isEmpty)
     }
 
+    func testAccessibilityLossDuringMoveReturnsPermissionMissing() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 800, height: 600),
+            moveError: .accessibilityPermissionMissing
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(.rightHalf)
+
+        XCTAssertEqual(result, .failed(.accessibilityPermissionMissing))
+        XCTAssertTrue(windows.movedFrames.isEmpty)
+    }
+
     func testMovesActiveWindowToCalculatedFrame() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
@@ -143,7 +178,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
-            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            currentFrame: Rect(x: 100, y: 0, width: 500, height: 800),
             visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -284,7 +319,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
-            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            currentFrame: Rect(x: 100, y: 0, width: 500, height: 800),
             visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
@@ -299,7 +334,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         XCTAssertEqual(windows.moveCallCount, 1)
     }
 
-    func testAnimationSettingTrueIsIgnoredAndStillUsesImmediateSetFrameOnce() {
+    func testAnimationSettingTrueUsesDiscreteMovementFrames() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
@@ -314,8 +349,30 @@ final class WindowCommandHandlerTests: XCTestCase {
         )
 
         XCTAssertEqual(result, .moved(Rect(x: 500, y: 0, width: 500, height: 800)))
-        XCTAssertEqual(windows.movedFrames, [Rect(x: 500, y: 0, width: 500, height: 800)])
-        XCTAssertEqual(windows.moveCallCount, 1)
+        XCTAssertEqual(windows.movedFrames.count, 5)
+        XCTAssertEqual(windows.movedFrames.last, Rect(x: 500, y: 0, width: 500, height: 800))
+        XCTAssertEqual(windows.moveCallCount, 5)
+    }
+
+    func testAnimationSettingsAllowThirtyTwoStepsAndMinimumDuration() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 0, width: 500, height: 800),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(
+            .rightHalf,
+            options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.02, animationSteps: 32)
+        )
+
+        XCTAssertEqual(result, .moved(Rect(x: 500, y: 0, width: 500, height: 800)))
+        XCTAssertEqual(windows.movedFrames.count, 32)
+        XCTAssertNotEqual(windows.movedFrames.first, Rect(x: 500, y: 0, width: 500, height: 800))
+        XCTAssertEqual(windows.movedFrames.last, Rect(x: 500, y: 0, width: 500, height: 800))
+        XCTAssertEqual(windows.moveCallCount, 32)
     }
 
     func testExplicitImmediateMovementModeUsesImmediateSetFramePath() {
@@ -337,7 +394,74 @@ final class WindowCommandHandlerTests: XCTestCase {
         XCTAssertEqual(windows.moveCallCount, 1)
     }
 
-    func testRestoreAfterAnimationSettingReturnsWindowToOriginalFrameImmediately() {
+    func testDiscreteMovementModePlansFourFramesIncludingFinalTarget() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        let result = handler.perform(
+            .leftHalf,
+            options: WindowCommandOptions(movementMode: .discreteSteps(totalStepCount: 4, totalDuration: 0.24))
+        )
+
+        let target = Rect(x: 0, y: 0, width: 500, height: 800)
+        XCTAssertEqual(result, .moved(target))
+        XCTAssertEqual(windows.moveCallCount, 4)
+        XCTAssertEqual(windows.movedFrames.count, 4)
+        XCTAssertNotEqual(windows.movedFrames[0], target)
+        XCTAssertEqual(windows.movedFrames[3], target)
+    }
+
+    func testDiscreteMovementModeUsesLinearInterpolation() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(
+            .leftHalf,
+            options: WindowCommandOptions(movementMode: .discreteSteps(totalStepCount: 4, totalDuration: 0.24))
+        )
+
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 75, y: 75, width: 500, height: 500),
+            Rect(x: 50, y: 50, width: 500, height: 600),
+            Rect(x: 25, y: 25, width: 500, height: 700),
+            Rect(x: 0, y: 0, width: 500, height: 800)
+        ])
+    }
+
+    func testDiscreteMovementDoesNotOverwriteRestoreFrameWithIntermediateFrames() {
+        let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
+        let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
+        let windows = MockWindowController(
+            focusedWindowResult: .success("window-1"),
+            currentFrame: originalFrame,
+            visibleFrame: Rect(x: 0, y: 0, width: 1000, height: 800)
+        )
+        let handler = WindowCommandHandler(permissions: permissions, windows: windows)
+
+        _ = handler.perform(
+            .leftHalf,
+            options: WindowCommandOptions(movementMode: .discreteSteps(totalStepCount: 4, totalDuration: 0.24))
+        )
+        let result = handler.perform(
+            .restore,
+            options: WindowCommandOptions(movementMode: .discreteSteps(totalStepCount: 4, totalDuration: 0.24))
+        )
+
+        XCTAssertEqual(result, .moved(originalFrame))
+        XCTAssertEqual(windows.movedFrames.last, originalFrame)
+    }
+
+    func testRestoreAfterAnimationSettingReturnsWindowToOriginalFrame() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
         let windows = MockWindowController(
@@ -354,10 +478,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         let result = handler.perform(.restore, options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.25, animationSteps: 5))
 
         XCTAssertEqual(result, .moved(originalFrame))
-        XCTAssertEqual(windows.movedFrames, [
-            Rect(x: 400, y: 0, width: 400, height: 800),
-            originalFrame
-        ])
+        XCTAssertEqual(windows.movedFrames.last, originalFrame)
     }
 
     func testAnimationSettingDoesNotOverwriteRestoreFrame() {
@@ -375,16 +496,33 @@ final class WindowCommandHandlerTests: XCTestCase {
         let result = handler.perform(.restore)
 
         XCTAssertEqual(result, .moved(originalFrame))
-        XCTAssertEqual(windows.movedFrames, [
-            Rect(x: 0, y: 0, width: 600, height: 800),
-            Rect(x: 600, y: 0, width: 600, height: 800),
-            originalFrame
-        ])
+        XCTAssertEqual(windows.movedFrames.last, originalFrame)
     }
 }
 
 private struct MockPermissionChecker: PermissionChecking {
     var hasAccessibilityPermission: Bool
+
+    func openAccessibilitySettings() {}
+}
+
+private final class MutablePermissionChecker: PermissionChecking {
+    var trusted: Bool
+    private(set) var readCount = 0
+
+    init(hasAccessibilityPermission: Bool) {
+        self.trusted = hasAccessibilityPermission
+    }
+
+    var hasAccessibilityPermission: Bool {
+        get {
+            readCount += 1
+            return trusted
+        }
+        set {
+            trusted = newValue
+        }
+    }
 
     func openAccessibilitySettings() {}
 }

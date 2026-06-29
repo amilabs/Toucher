@@ -2,11 +2,14 @@ import AppKit
 import ApplicationServices
 import WindowGesturesCore
 
-public struct AccessibilityPermissionChecker: PermissionChecking {
+public struct AccessibilityTrustProvider: PermissionChecking {
     public init() {}
 
     public var hasAccessibilityPermission: Bool {
-        AXIsProcessTrusted()
+        AccessibilityPermissionEvaluator.isTrusted(
+            processTrusted: AXIsProcessTrusted(),
+            probeResult: focusedApplicationProbeResult()
+        )
     }
 
     public func openAccessibilitySettings() {
@@ -23,4 +26,27 @@ public struct AccessibilityPermissionChecker: PermissionChecking {
             return
         }
     }
+
+    private func focusedApplicationProbeResult() -> AccessibilityPermissionProbeResult {
+        let systemWideElement = AXUIElementCreateSystemWide()
+        var focusedApplication: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(
+            systemWideElement,
+            kAXFocusedApplicationAttribute as CFString,
+            &focusedApplication
+        )
+
+        switch result {
+        case .success:
+            return .allowed
+        case .apiDisabled, .failure, .illegalArgument:
+            return .denied
+        case .cannotComplete, .noValue:
+            return .inconclusive
+        default:
+            return .denied
+        }
+    }
 }
+
+public typealias AccessibilityPermissionChecker = AccessibilityTrustProvider
