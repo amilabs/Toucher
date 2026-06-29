@@ -50,31 +50,6 @@ To enable it:
 
 If Accessibility is missing, Toucher does not move windows and shows a warning in the status bar menu.
 
-## Status Bar Menu
-
-When Accessibility is enabled:
-
-- About Toucher
-- Settings
-- Quit Toucher
-
-When Accessibility is not enabled:
-
-- About Toucher
-- ⚠ Settings — Accessibility required
-- Quit Toucher
-
-## Settings
-
-The Settings window includes:
-
-- Enable trackpad gestures
-- Animate window movement
-- Animation steps
-- Animation duration
-- Accessibility status
-- Accessibility Settings…
-- Gesture Diagnostics…
 
 ## Troubleshooting
 
@@ -91,10 +66,3 @@ If hotkeys or gestures are recognized but windows do not move:
 Toucher uses a private macOS multitouch API to recognize exact three-finger gestures. This API is isolated to the macOS adapter layer and is the reason Toucher is not App Store compatible.
 
 Hotkeys and window movement use standard macOS APIs.
-
-## Developer Documentation
-
-- [Development workflow](docs/dev-workflow.md)
-- [Signing and distribution](docs/signing.md)
-- [Gesture behavior](docs/gestures.md)
-- [Manual release testing](docs/manual-test.md)
