@@ -120,16 +120,17 @@ public final class RawThreeFingerSwipeRecognizer {
 
     public func recognize(_ sample: RawTouchSample) -> RawGestureRecognitionResult {
         guard sample.activeTouchCount == 3 else {
-            let reason: RawGestureIgnoredReason
             switch state {
             case .idle:
-                reason = .unsupportedFingerCount
-            case .tracking, .completed:
-                reason = .fingerCountChanged
+                return .ignored(.unsupportedFingerCount)
+            case .tracking(let gesture):
+                state = .idle
+                recordRejected(.fingerCountChanged, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                return .ignored(.fingerCountChanged)
+            case .completed:
+                state = .idle
+                return .ignored(.unsupportedFingerCount)
             }
-            state = .idle
-            recordRejected(reason, startTimestamp: nil, endTimestamp: sample.timestamp)
-            return .ignored(reason)
         }
 
         switch state {

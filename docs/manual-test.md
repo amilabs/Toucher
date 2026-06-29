@@ -1,29 +1,25 @@
 # Toucher manual test
 
-## v0.5.3 smoke test
+## v0.5.6 smoke test
 
-Fresh run:
+Fresh start:
 
 ```bash
 pkill -x Toucher || true
+defaults delete com.amilabs.Toucher || true
 make run-debug
 ```
 
 Expected menu state:
 
-- `Toucher version: 0.5.3`
+- `Toucher version: 0.5.6`
 - `Accessibility trusted: yes`
 - `App bundle id: com.amilabs.Toucher`
 - `App bundle path: ~/Applications/Toucher.app`
 - `Gesture backend: raw multitouch`
 - `Raw multitouch active: yes`
-
-Expected settings defaults:
-
-- gestures enabled: yes
-- backend: raw
-- diagnostics: off
-- animation: off
+- `Last movement mode: immediate`
+- no animation setting is visible in Settings
 
 If Accessibility is not trusted, run:
 
@@ -35,64 +31,44 @@ Then remove old WindowGestures entries and add `~/Applications/Toucher.app` in S
 
 ## Settings stability
 
-Fresh reset:
-
-```bash
-pkill -x Toucher || true
-defaults delete com.amilabs.Toucher || true
-make run-debug
-```
-
-Test:
-
 1. Open Settings.
-2. Toggle Enable diagnostics/probe on and off.
-3. App must not crash.
-4. Toggle Invert gesture direction on and off.
-5. App must not crash.
-6. Change raw minimum distance.
-7. App must not crash.
-8. Toggle Animation enabled on.
-9. App must not crash.
-10. Toggle Animation enabled off.
-11. App must not crash.
-12. Open Gesture Diagnostics.
-13. App must not crash.
-14. Close Gesture Diagnostics.
-15. App must not crash.
+2. Close Settings.
+3. Open Settings again.
+4. App must not crash.
+5. Change every visible setting one by one.
+6. App must not crash.
+7. Close and reopen Settings again.
+8. App must not crash.
 
-## Animation off
+Visible settings:
+
+- Enable gestures
+- Gesture backend
+- Enable diagnostics/probe
+- Invert gesture direction
+- Raw gesture minimum distance
+- Raw gesture dominance ratio
+- Raw gesture cooldown
+
+## Gesture and hotkey test
 
 1. Open a normal resizable app window, such as TextEdit or Finder.
-2. Confirm animation is off in Settings.
-3. Press Control + Shift + Left Arrow.
-4. Confirm the active window moves to the left half.
-5. Press Control + Shift + Right Arrow.
-6. Confirm the active window moves to the right half.
-7. Press Control + Shift + Up Arrow once.
-8. Confirm the active window maximizes to the visible frame.
-9. Press Control + Shift + Up Arrow twice quickly.
-10. Confirm the window becomes full visible height and centered at one third visible width.
-11. Swipe exactly three fingers left.
-12. Confirm the active window moves to the left half.
-13. Swipe exactly three fingers right.
-14. Confirm the active window moves to the right half.
-15. Swipe exactly three fingers up.
-16. Confirm the window maximizes to the full visible screen.
-17. Press Control + Shift + Down Arrow.
-18. Confirm the window restores to its original frame.
-
-## Animation on
-
-1. Open Settings.
-2. Enable `Animation enabled (experimental)`.
-3. Set duration to `0.30`.
-4. Repeat the hotkeys and raw gestures from the animation-off test.
-5. Confirm movement is smooth and visible.
-6. Confirm the app does not crash.
-7. Confirm gestures and hotkeys still work.
-8. Disable animation.
-9. Confirm immediate movement works again.
+2. Press Control + Shift + Left Arrow.
+3. Confirm the active window moves immediately to the left half.
+4. Press Control + Shift + Right Arrow.
+5. Confirm the active window moves immediately to the right half.
+6. Press Control + Shift + Up Arrow once.
+7. Confirm the active window maximizes to the visible frame.
+8. Press Control + Shift + Up Arrow twice quickly.
+9. Confirm the window becomes full visible height and centered at one third visible width.
+10. Press Control + Shift + Down Arrow.
+11. Confirm the window restores to its original frame.
+12. Swipe exactly three fingers left.
+13. Confirm the active window moves immediately to the left half.
+14. Swipe exactly three fingers right.
+15. Confirm the active window moves immediately to the right half.
+16. Swipe exactly three fingers up.
+17. Confirm the window maximizes to the full visible screen.
 
 Note: three-finger up and Control + Shift + Up both maximize. Control + Shift + Up twice quickly is the separate centered one-third-width action.
 
@@ -121,30 +97,27 @@ Note: three-finger up and Control + Shift + Up both maximize. Control + Shift + 
 
 ## Gesture diagnostics
 
-1. Choose `Open Gesture Diagnostics`.
-2. Confirm the window title is `Toucher Gesture Diagnostics`.
-3. Confirm raw diagnostics appear before public NSEvent diagnostics.
-4. Perform three-finger left, right, and up gestures.
-5. Confirm these counters update:
+1. Open Gesture Diagnostics.
+2. Close Gesture Diagnostics.
+3. Open Gesture Diagnostics again.
+4. App must not crash.
+5. Perform three-finger left, right, and up gestures.
+6. Confirm these counters update:
    - total raw callbacks
    - total recognized gestures
    - left gestures
    - right gestures
    - up gestures
-   - ignored gestures
-   - unsupported finger count
-   - canceled gestures
-6. Confirm timing fields show:
-   - minHorizontalDistance
-   - minVerticalDistance
-   - dominanceRatio
-   - maxGestureDuration
-   - cooldown
-   - last gesture duration
-   - start and end/trigger timestamps
-   - accepted/rejected state and rejection reason
+7. Confirm Last accepted gesture, Last accepted dx/dy, and Last accepted duration update.
+8. Move with two or four fingers.
+9. Confirm unsupported finger count increases but Last 10 raw events are not filled with continuous two-finger/four-finger noise.
+10. Confirm movement diagnostics show:
+   - last movement mode: immediate
+   - target frame
+   - final readback frame if available
+   - movement error
 
-Diagnostics mode can increase CPU. Normal idle mode should stay low because public NSEvent diagnostics are off by default, the diagnostics window is throttled, and no timers run while idle.
+Diagnostics mode can increase CPU. Normal idle mode should stay low because public NSEvent diagnostics are off by default, the diagnostics window is throttled, and no movement timers run while idle.
 
 ## CPU check
 
@@ -154,4 +127,4 @@ Run:
 make debug-cpu-note
 ```
 
-Then check Toucher in Activity Monitor or with the printed `top` command. If CPU remains high in normal idle mode with diagnostics closed, profile with Instruments in a follow-up pass.
+Then check Toucher in Activity Monitor or with the printed `top` command.

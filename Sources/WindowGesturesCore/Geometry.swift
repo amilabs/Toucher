@@ -39,16 +39,6 @@ public enum WindowScreenTarget: Equatable, Sendable {
 
 public enum WindowMovementMode: Equatable, Sendable {
     case immediate
-    case animated(duration: TimeInterval)
-
-    public var isAnimated: Bool {
-        switch self {
-        case .immediate:
-            return false
-        case .animated(let duration):
-            return duration > 0
-        }
-    }
 }
 
 public struct WindowCommandOptions: Equatable, Sendable {
@@ -57,13 +47,12 @@ public struct WindowCommandOptions: Equatable, Sendable {
 
     public init(
         screenTarget: WindowScreenTarget = .current,
-        animated: Bool = false,
-        animationDuration: TimeInterval = 0.25
+        animateWindowMovement: Bool = false,
+        animationDuration: TimeInterval = 0.25,
+        animationSteps: Int = 5
     ) {
         self.screenTarget = screenTarget
-        self.movementMode = animated && animationDuration > 0
-            ? .animated(duration: min(0.5, max(0, animationDuration)))
-            : .immediate
+        self.movementMode = .immediate
     }
 
     public init(
@@ -146,55 +135,6 @@ public enum ScreenSelector {
         return screens.max { lhs, rhs in
             lhs.frame.intersectionArea(with: windowFrame) < rhs.frame.intersectionArea(with: windowFrame)
         }
-    }
-}
-
-public enum AnimationPlanner {
-    public static let visibleFrameInterval: TimeInterval = 0.025
-
-    public static func scheduledFrames(
-        from start: Rect,
-        to end: Rect,
-        duration: TimeInterval,
-        frameInterval: TimeInterval = AnimationPlanner.visibleFrameInterval
-    ) -> [Rect] {
-        let frames = frames(from: start, to: end, duration: duration, frameInterval: frameInterval)
-        guard duration > 0 else {
-            return frames
-        }
-
-        return Array(frames.dropFirst())
-    }
-
-    public static func frames(
-        from start: Rect,
-        to end: Rect,
-        duration: TimeInterval,
-        frameInterval: TimeInterval = AnimationPlanner.visibleFrameInterval
-    ) -> [Rect] {
-        guard duration > 0 else {
-            return [end]
-        }
-
-        let steps = max(12, Int(ceil(duration / frameInterval)))
-        return (0...steps).map { step in
-            let progress = Double(step) / Double(steps)
-            return interpolate(from: start, to: end, progress: easeOut(progress))
-        }
-    }
-
-    public static func easeOut(_ progress: Double) -> Double {
-        let clamped = min(1, max(0, progress))
-        return 1 - pow(1 - clamped, 3)
-    }
-
-    private static func interpolate(from start: Rect, to end: Rect, progress: Double) -> Rect {
-        Rect(
-            x: start.x + (end.x - start.x) * progress,
-            y: start.y + (end.y - start.y) * progress,
-            width: start.width + (end.width - start.width) * progress,
-            height: start.height + (end.height - start.height) * progress
-        )
     }
 }
 

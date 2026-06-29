@@ -2,8 +2,10 @@ import XCTest
 @testable import WindowGesturesCore
 
 final class ToucherRuntimeCoordinatorTests: XCTestCase {
-    func testDefaultSettingsDisableAnimation() {
-        XCTAssertFalse(ToucherSettingsSnapshot().animationEnabled)
+    func testDefaultSettingsDisableWindowAnimation() {
+        XCTAssertFalse(ToucherSettingsSnapshot().animateWindowMovement)
+        XCTAssertEqual(ToucherSettingsSnapshot().animationDuration, 0.25)
+        XCTAssertEqual(ToucherSettingsSnapshot().animationSteps, 5)
     }
 
     func testApplySettingsStopsOldBackendBeforeStartingNewBackend() {
@@ -59,7 +61,7 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
         XCTAssertTrue(raw.isRunning)
     }
 
-    func testChangingAnimationEnabledDoesNotRestartGestureBackend() {
+    func testChangingWindowAnimationEnabledDoesNotRestartGestureBackend() {
         let recorder = LifecycleRecorder()
         let raw = MockGestureBackend(name: "raw", recorder: recorder)
         let publicBackend = MockGestureBackend(name: "public", recorder: recorder)
@@ -72,37 +74,37 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
 
         coordinator.applySettings(ToucherSettingsSnapshot(gestureBackend: .raw))
         recorder.events.removeAll()
-        coordinator.applySettings(ToucherSettingsSnapshot(gestureBackend: .raw, animationEnabled: true))
+        coordinator.applySettings(ToucherSettingsSnapshot(gestureBackend: .raw, animateWindowMovement: true))
 
         XCTAssertTrue(recorder.events.isEmpty)
     }
 
-    func testChangingAnimationEnabledDoesNotCallActionHandler() {
+    func testChangingWindowAnimationEnabledDoesNotCallActionHandler() {
         let coordinator = ToucherRuntimeCoordinator(
             actionHandler: MockActionHandler(),
             rawBackend: MockGestureBackend(name: "raw", recorder: LifecycleRecorder()),
             publicBackend: MockGestureBackend(name: "public", recorder: LifecycleRecorder())
         )
 
-        coordinator.applySettings(ToucherSettingsSnapshot(animationEnabled: true))
+        coordinator.applySettings(ToucherSettingsSnapshot(animateWindowMovement: true))
 
-        XCTAssertEqual(coordinator.settings.animationEnabled, true)
+        XCTAssertEqual(coordinator.settings.animateWindowMovement, true)
     }
 
-    func testHandleActionPassesCurrentAnimationSettings() {
+    func testHandleActionIgnoresAnimationSettingsAndUsesImmediateMovement() {
         let handler = MockActionHandler()
         let coordinator = ToucherRuntimeCoordinator(
+            settings: ToucherSettingsSnapshot(animateWindowMovement: true, animationDuration: 0.5, animationSteps: 12),
             actionHandler: handler,
             rawBackend: MockGestureBackend(name: "raw", recorder: LifecycleRecorder()),
             publicBackend: MockGestureBackend(name: "public", recorder: LifecycleRecorder())
         )
-        coordinator.setAnimationEnabled(true)
 
         _ = coordinator.handleAction(.leftHalf, screenTarget: .next)
 
         XCTAssertEqual(handler.actions, [.leftHalf])
         XCTAssertEqual(handler.options, [
-            WindowCommandOptions(screenTarget: .next, movementMode: .animated(duration: 0.30))
+            WindowCommandOptions(screenTarget: .next, movementMode: .immediate)
         ])
     }
 
@@ -127,15 +129,24 @@ final class ToucherRuntimeCoordinatorTests: XCTestCase {
     func testSettingsAreClamped() {
         let snapshot = ToucherSettingsSnapshot(
             animationDuration: 2,
+            animationSteps: 99,
             rawMinDistance: -1,
             rawDominanceRatio: 0,
             rawCooldown: 5
         )
 
         XCTAssertEqual(snapshot.animationDuration, 0.5)
+        XCTAssertEqual(snapshot.animationSteps, 12)
         XCTAssertEqual(snapshot.rawMinDistance, 0.001)
         XCTAssertEqual(snapshot.rawDominanceRatio, 1)
         XCTAssertEqual(snapshot.rawCooldown, 2)
+    }
+
+    func testAnimationDurationAndStepsHaveMinimumClamp() {
+        let snapshot = ToucherSettingsSnapshot(animationDuration: 0, animationSteps: 1)
+
+        XCTAssertEqual(snapshot.animationDuration, 0.05)
+        XCTAssertEqual(snapshot.animationSteps, 2)
     }
 }
 

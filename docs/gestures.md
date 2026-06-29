@@ -4,7 +4,7 @@ Toucher keeps gesture input behind the `GestureMonitoring` protocol so hotkeys, 
 
 ## Raw multitouch backend
 
-`RawMultitouchBackend` is the default v0.5.3 backend. It uses private macOS `MultitouchSupport.framework` to detect exact three-finger horizontal and upward swipes.
+`RawMultitouchBackend` is the default v0.5.6 backend. It uses private macOS `MultitouchSupport.framework` to detect exact three-finger horizontal and upward swipes.
 
 Raw gesture mapping:
 

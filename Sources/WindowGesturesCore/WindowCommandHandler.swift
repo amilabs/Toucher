@@ -40,9 +40,9 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
                     return .failed(.noStoredFrame)
                 }
 
-            try move(window, to: restoreFrame, options: options)
-            restoreFrames.removeValue(forKey: restoreIdentifier)
-            return .moved(restoreFrame)
+                try move(window, to: restoreFrame, options: options)
+                restoreFrames.removeValue(forKey: restoreIdentifier)
+                return .moved(restoreFrame)
             }
 
             if let restoreIdentifier, restoreFrames[restoreIdentifier] == nil {
@@ -87,17 +87,6 @@ public final class WindowCommandHandler<Permissions: PermissionChecking, Control
         to frame: Rect,
         options: WindowCommandOptions
     ) throws {
-        switch options.movementMode {
-        case .immediate:
-            try windows.move(window, to: frame)
-        case .animated(let duration):
-            guard duration > 0 else {
-                try windows.move(window, to: frame)
-                return
-            }
-
-            try windows.animatedMove(window, to: frame, duration: duration)
-            return
-        }
+        try windows.move(window, to: frame)
     }
 }

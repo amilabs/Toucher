@@ -280,7 +280,7 @@ final class WindowCommandHandlerTests: XCTestCase {
         XCTAssertEqual(result, .moved(Rect(x: 500, y: 0, width: 500, height: 780)))
     }
 
-    func testAnimationDisabledUsesImmediateSetFramePath() {
+    func testImmediateSetFramePathCallsMoveOnce() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
@@ -291,15 +291,15 @@ final class WindowCommandHandlerTests: XCTestCase {
 
         let result = handler.perform(
             .leftHalf,
-            options: WindowCommandOptions(animated: false, animationDuration: 0.25)
+            options: WindowCommandOptions(animateWindowMovement: false, animationDuration: 0.25, animationSteps: 5)
         )
 
         XCTAssertEqual(result, .moved(Rect(x: 0, y: 0, width: 500, height: 800)))
         XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 500, height: 800)])
-        XCTAssertTrue(windows.animatedFrames.isEmpty)
+        XCTAssertEqual(windows.moveCallCount, 1)
     }
 
-    func testAnimationEnabledUsesAnimatorPath() {
+    func testAnimationSettingTrueIsIgnoredAndStillUsesImmediateSetFrameOnce() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
@@ -310,15 +310,15 @@ final class WindowCommandHandlerTests: XCTestCase {
 
         let result = handler.perform(
             .rightHalf,
-            options: WindowCommandOptions(animated: true, animationDuration: 0.25)
+            options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.25, animationSteps: 5)
         )
 
         XCTAssertEqual(result, .moved(Rect(x: 500, y: 0, width: 500, height: 800)))
-        XCTAssertTrue(windows.movedFrames.isEmpty)
-        XCTAssertEqual(windows.animatedFrames, [Rect(x: 500, y: 0, width: 500, height: 800)])
+        XCTAssertEqual(windows.movedFrames, [Rect(x: 500, y: 0, width: 500, height: 800)])
+        XCTAssertEqual(windows.moveCallCount, 1)
     }
 
-    func testAnimationDurationZeroUsesImmediateSetFramePath() {
+    func testExplicitImmediateMovementModeUsesImmediateSetFramePath() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let windows = MockWindowController(
             focusedWindowResult: .success("window-1"),
@@ -329,15 +329,15 @@ final class WindowCommandHandlerTests: XCTestCase {
 
         let result = handler.perform(
             .maximize,
-            options: WindowCommandOptions(animated: true, animationDuration: 0)
+            options: WindowCommandOptions(movementMode: .immediate)
         )
 
         XCTAssertEqual(result, .moved(Rect(x: 0, y: 0, width: 1000, height: 800)))
         XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 1000, height: 800)])
-        XCTAssertTrue(windows.animatedFrames.isEmpty)
+        XCTAssertEqual(windows.moveCallCount, 1)
     }
 
-    func testRestoreAfterAnimatedSnapReturnsWindowToOriginalFrame() {
+    func testRestoreAfterAnimationSettingReturnsWindowToOriginalFrameImmediately() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
         let windows = MockWindowController(
@@ -349,16 +349,18 @@ final class WindowCommandHandlerTests: XCTestCase {
 
         _ = handler.perform(
             .verticalMaxCenterThird,
-            options: WindowCommandOptions(movementMode: .animated(duration: 0.25))
+            options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.25, animationSteps: 5)
         )
-        let result = handler.perform(.restore)
+        let result = handler.perform(.restore, options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.25, animationSteps: 5))
 
         XCTAssertEqual(result, .moved(originalFrame))
-        XCTAssertEqual(windows.animatedFrames, [Rect(x: 400, y: 0, width: 400, height: 800)])
-        XCTAssertEqual(windows.movedFrames, [originalFrame])
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 400, y: 0, width: 400, height: 800),
+            originalFrame
+        ])
     }
 
-    func testAnimationDoesNotOverwriteRestoreFrameWithIntermediateFrames() {
+    func testAnimationSettingDoesNotOverwriteRestoreFrame() {
         let permissions = MockPermissionChecker(hasAccessibilityPermission: true)
         let originalFrame = Rect(x: 100, y: 100, width: 500, height: 400)
         let windows = MockWindowController(
@@ -368,12 +370,16 @@ final class WindowCommandHandlerTests: XCTestCase {
         )
         let handler = WindowCommandHandler(permissions: permissions, windows: windows)
 
-        _ = handler.perform(.leftHalf, options: WindowCommandOptions(movementMode: .animated(duration: 0.25)))
-        _ = handler.perform(.rightHalf, options: WindowCommandOptions(movementMode: .animated(duration: 0.25)))
+        _ = handler.perform(.leftHalf, options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.25, animationSteps: 5))
+        _ = handler.perform(.rightHalf, options: WindowCommandOptions(animateWindowMovement: true, animationDuration: 0.25, animationSteps: 5))
         let result = handler.perform(.restore)
 
         XCTAssertEqual(result, .moved(originalFrame))
-        XCTAssertEqual(windows.movedFrames, [originalFrame])
+        XCTAssertEqual(windows.movedFrames, [
+            Rect(x: 0, y: 0, width: 600, height: 800),
+            Rect(x: 600, y: 0, width: 600, height: 800),
+            originalFrame
+        ])
     }
 }
 
@@ -393,7 +399,7 @@ private final class MockWindowController: WindowControlling {
     let visibleFrameError: WindowMovementError?
     let moveError: WindowMovementError?
     private(set) var movedFrames: [Rect] = []
-    private(set) var animatedFrames: [Rect] = []
+    private(set) var moveCallCount = 0
 
     init(
         focusedWindowResult: Result<String, WindowMovementError>,
@@ -440,16 +446,8 @@ private final class MockWindowController: WindowControlling {
             throw moveError
         }
 
+        moveCallCount += 1
         movedFrames.append(frame)
-        currentFrame = frame
-    }
-
-    func animatedMove(_ window: String, to frame: Rect, duration: TimeInterval) throws {
-        if let moveError {
-            throw moveError
-        }
-
-        animatedFrames.append(frame)
         currentFrame = frame
     }
 
