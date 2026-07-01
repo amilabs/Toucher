@@ -6,7 +6,7 @@ final class BuildInfoTests: XCTestCase {
         let model = AboutToucherModel(buildDate: "2026-06-29 12:00")
 
         XCTAssertEqual(model.appName, "Toucher")
-        XCTAssertEqual(model.version, "0.5.7")
+        XCTAssertEqual(model.version, "0.5.8")
         XCTAssertEqual(model.repositoryDisplayText, "GitHub Repository")
         XCTAssertFalse(model.repositoryDisplayText.contains("utm_"))
         XCTAssertTrue(model.repositoryOpenURL.contains("utm_source=toucher_app"))

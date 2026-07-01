@@ -65,7 +65,7 @@ Current Makefile values:
 
 - `APP_NAME`: `Toucher`
 - `BUNDLE_ID`: `com.amilabs.Toucher`
-- `APP_VERSION`: `0.5.7`
+- `APP_VERSION`: `0.5.8`
 - `INSTALL_APP`: `$(HOME)/Applications/Toucher.app`
 - `SIGN_IDENTITY`: `WindowGestures Local Dev`
 

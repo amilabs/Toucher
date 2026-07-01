@@ -1,6 +1,6 @@
 APP_NAME := Toucher
 BUNDLE_ID := com.amilabs.Toucher
-APP_VERSION := 0.5.7
+APP_VERSION := 0.5.8
 BUILD_DATE := $(shell date "+%Y-%m-%d %H:%M")
 REPOSITORY_URL := https://github.com/amilabs/Toucher
 SIGN_IDENTITY ?= WindowGestures Local Dev

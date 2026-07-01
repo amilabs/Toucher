@@ -2,7 +2,7 @@ import Foundation
 
 public enum BuildInfo {
     public static let appName = "Toucher"
-    public static let version = "0.5.7"
+    public static let version = "0.5.8"
     public static let bundleIdentifier = "com.amilabs.Toucher"
     public static let repositoryURL = "https://github.com/amilabs/Toucher"
     public static let repositoryDisplayText = "GitHub Repository"
