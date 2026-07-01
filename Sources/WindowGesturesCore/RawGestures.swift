@@ -25,6 +25,11 @@ public enum RawGestureIgnoredReason: String, Equatable, Sendable {
     case tooSlow
     case cooldown
     case alreadyTriggered
+    case fingerCountChangedBeforeConfirmation
+    case liftedBeforeConfirmation
+    case directionChangedBeforeConfirmation
+    case insufficientStableSamples
+    case confirmationTimeoutOrExpired
 }
 
 public enum RawGestureRecognitionResult: Equatable, Sendable {
@@ -32,7 +37,24 @@ public enum RawGestureRecognitionResult: Equatable, Sendable {
     case ignored(RawGestureIgnoredReason)
 }
 
+public enum RawGestureRecognizerState: String, Equatable, Sendable {
+    case idle
+    case candidateThreeFinger
+    case pendingTrigger
+    case triggered
+    case canceled
+}
+
 public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
+    public var recognizerState: RawGestureRecognizerState
+    public var currentActiveTouchCount: Int
+    public var candidateStartTouchCount: Int?
+    public var candidateSampleCount: Int
+    public var candidateCanceledReason: RawGestureIgnoredReason?
+    public var pendingAction: WindowAction?
+    public var thresholdCrossedTimestamp: TimeInterval?
+    public var confirmationDelay: TimeInterval
+    public var lastAcceptedActiveTouchCount: Int?
     public var minHorizontalDistance: Double
     public var minVerticalDistance: Double
     public var dominanceRatio: Double
@@ -45,6 +67,15 @@ public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
     public var lastRejectionReason: RawGestureIgnoredReason?
 
     public init(
+        recognizerState: RawGestureRecognizerState = .idle,
+        currentActiveTouchCount: Int = 0,
+        candidateStartTouchCount: Int? = nil,
+        candidateSampleCount: Int = 0,
+        candidateCanceledReason: RawGestureIgnoredReason? = nil,
+        pendingAction: WindowAction? = nil,
+        thresholdCrossedTimestamp: TimeInterval? = nil,
+        confirmationDelay: TimeInterval = 0,
+        lastAcceptedActiveTouchCount: Int? = nil,
         minHorizontalDistance: Double,
         minVerticalDistance: Double,
         dominanceRatio: Double,
@@ -56,6 +87,15 @@ public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
         lastGestureAccepted: Bool? = nil,
         lastRejectionReason: RawGestureIgnoredReason? = nil
     ) {
+        self.recognizerState = recognizerState
+        self.currentActiveTouchCount = currentActiveTouchCount
+        self.candidateStartTouchCount = candidateStartTouchCount
+        self.candidateSampleCount = candidateSampleCount
+        self.candidateCanceledReason = candidateCanceledReason
+        self.pendingAction = pendingAction
+        self.thresholdCrossedTimestamp = thresholdCrossedTimestamp
+        self.confirmationDelay = confirmationDelay
+        self.lastAcceptedActiveTouchCount = lastAcceptedActiveTouchCount
         self.minHorizontalDistance = minHorizontalDistance
         self.minVerticalDistance = minVerticalDistance
         self.dominanceRatio = dominanceRatio
@@ -70,17 +110,35 @@ public struct RawGestureDiagnosticSnapshot: Equatable, Sendable {
 }
 
 public final class RawThreeFingerSwipeRecognizer {
-    private struct TrackingGesture {
+    private struct CandidateGesture {
         var startX: Double
         var startY: Double
         var startTimestamp: TimeInterval
+        var sampleCount: Int
+    }
+
+    private struct PendingTrigger {
+        var candidate: CandidateGesture
+        var action: WindowAction
+        var thresholdCrossedTimestamp: TimeInterval
     }
 
     private enum State {
         case idle
-        case tracking(TrackingGesture)
-        case completed
+        case candidateThreeFinger(CandidateGesture)
+        case pendingTrigger(PendingTrigger)
+        case triggered
+        case canceled
     }
+
+    private enum ActionEvaluation {
+        case action(WindowAction)
+        case ignored(RawGestureIgnoredReason)
+    }
+
+    private static let requiredExactThreeFingerSampleCount = 4
+    private static let minimumCandidateAge: TimeInterval = 0.050
+    private static let triggerConfirmationDelay: TimeInterval = 0.070
 
     public let minHorizontalDistance: Double
     public let minVerticalDistance: Double
@@ -110,6 +168,7 @@ public final class RawThreeFingerSwipeRecognizer {
         self.invertDirection = invertDirection
         self.invertVerticalDirection = invertVerticalDirection
         self.diagnostics = RawGestureDiagnosticSnapshot(
+            confirmationDelay: Self.triggerConfirmationDelay,
             minHorizontalDistance: minHorizontalDistance,
             minVerticalDistance: minVerticalDistance ?? minHorizontalDistance,
             dominanceRatio: dominanceRatio,
@@ -119,34 +178,32 @@ public final class RawThreeFingerSwipeRecognizer {
     }
 
     public func recognize(_ sample: RawTouchSample) -> RawGestureRecognitionResult {
+        diagnostics.currentActiveTouchCount = sample.activeTouchCount
+
         guard sample.activeTouchCount == 3 else {
-            switch state {
-            case .idle:
-                return .ignored(.unsupportedFingerCount)
-            case .tracking(let gesture):
-                state = .idle
-                recordRejected(.fingerCountChanged, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                return .ignored(.fingerCountChanged)
-            case .completed:
-                state = .idle
-                return .ignored(.unsupportedFingerCount)
-            }
+            return handleNonThreeFingerSample(sample)
         }
 
         switch state {
         case .idle:
-            if isCoolingDown(at: sample.timestamp) {
-                state = .completed
+            guard !isCoolingDown(at: sample.timestamp) else {
+                transitionToCanceled(reason: .cooldown)
                 return .ignored(.cooldown)
             }
 
-            state = .tracking(
-                TrackingGesture(
-                    startX: sample.centroidX,
-                    startY: sample.centroidY,
-                    startTimestamp: sample.timestamp
-                )
+            let candidate = CandidateGesture(
+                startX: sample.centroidX,
+                startY: sample.centroidY,
+                startTimestamp: sample.timestamp,
+                sampleCount: 1
             )
+            state = .candidateThreeFinger(candidate)
+            diagnostics.recognizerState = .candidateThreeFinger
+            diagnostics.candidateStartTouchCount = 3
+            diagnostics.candidateSampleCount = candidate.sampleCount
+            diagnostics.candidateCanceledReason = nil
+            diagnostics.pendingAction = nil
+            diagnostics.thresholdCrossedTimestamp = nil
             diagnostics.lastGestureStartTimestamp = sample.timestamp
             diagnostics.lastGestureEndTimestamp = nil
             diagnostics.lastGestureDuration = nil
@@ -154,68 +211,223 @@ public final class RawThreeFingerSwipeRecognizer {
             diagnostics.lastRejectionReason = nil
             return .ignored(.tracking)
 
-        case .tracking(let gesture):
-            let duration = sample.timestamp - gesture.startTimestamp
+        case .candidateThreeFinger(var candidate):
+            candidate.sampleCount += 1
+            state = .candidateThreeFinger(candidate)
+            diagnostics.candidateSampleCount = candidate.sampleCount
+
+            let duration = sample.timestamp - candidate.startTimestamp
             guard duration <= maxGestureDuration else {
-                state = .completed
-                recordRejected(.tooSlow, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                transitionToCanceled(reason: .tooSlow)
+                recordRejected(.tooSlow, startTimestamp: candidate.startTimestamp, endTimestamp: sample.timestamp)
                 return .ignored(.tooSlow)
             }
 
-            let deltaX = sample.centroidX - gesture.startX
-            let deltaY = sample.centroidY - gesture.startY
-            let absX = abs(deltaX)
-            let absY = abs(deltaY)
+            switch evaluateAction(candidate: candidate, sample: sample) {
+            case .ignored(let reason):
+                recordRejected(reason, startTimestamp: candidate.startTimestamp, endTimestamp: sample.timestamp)
+                return .ignored(reason)
+            case .action(let action):
+                guard candidate.sampleCount >= Self.requiredExactThreeFingerSampleCount,
+                      duration >= Self.minimumCandidateAge else {
+                    recordRejected(
+                        .insufficientStableSamples,
+                        startTimestamp: candidate.startTimestamp,
+                        endTimestamp: sample.timestamp
+                    )
+                    return .ignored(.insufficientStableSamples)
+                }
 
-            let isHorizontalCandidate = absX >= minHorizontalDistance
-            let isVerticalCandidate = absY >= minVerticalDistance
-            guard isHorizontalCandidate || isVerticalCandidate else {
-                recordRejected(.belowThreshold, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                return .ignored(.belowThreshold)
+                let pending = PendingTrigger(
+                    candidate: candidate,
+                    action: action,
+                    thresholdCrossedTimestamp: sample.timestamp
+                )
+                transitionToPending(pending)
+                return .ignored(.tracking)
             }
 
-            if isVerticalCandidate,
-               absY >= absX * dominanceRatio {
+        case .pendingTrigger(var pending):
+            pending.candidate.sampleCount += 1
+            state = .pendingTrigger(pending)
+            diagnostics.candidateSampleCount = pending.candidate.sampleCount
+
+            let duration = sample.timestamp - pending.candidate.startTimestamp
+            guard duration <= maxGestureDuration else {
+                transitionToCanceled(reason: .confirmationTimeoutOrExpired)
+                recordRejected(
+                    .confirmationTimeoutOrExpired,
+                    startTimestamp: pending.candidate.startTimestamp,
+                    endTimestamp: sample.timestamp
+                )
+                return .ignored(.confirmationTimeoutOrExpired)
+            }
+
+            switch evaluateAction(candidate: pending.candidate, sample: sample) {
+            case .ignored:
+                transitionToCanceled(reason: .directionChangedBeforeConfirmation)
+                recordRejected(
+                    .directionChangedBeforeConfirmation,
+                    startTimestamp: pending.candidate.startTimestamp,
+                    endTimestamp: sample.timestamp
+                )
+                return .ignored(.directionChangedBeforeConfirmation)
+            case .action(let action):
+                guard action == pending.action else {
+                    transitionToCanceled(reason: .directionChangedBeforeConfirmation)
+                    recordRejected(
+                        .directionChangedBeforeConfirmation,
+                        startTimestamp: pending.candidate.startTimestamp,
+                        endTimestamp: sample.timestamp
+                    )
+                    return .ignored(.directionChangedBeforeConfirmation)
+                }
+
+                guard sample.timestamp - pending.thresholdCrossedTimestamp >= Self.triggerConfirmationDelay else {
+                    return .ignored(.tracking)
+                }
+
                 guard !isCoolingDown(at: sample.timestamp) else {
-                    state = .completed
-                    recordRejected(.cooldown, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
+                    transitionToCanceled(reason: .cooldown)
+                    recordRejected(.cooldown, startTimestamp: pending.candidate.startTimestamp, endTimestamp: sample.timestamp)
                     return .ignored(.cooldown)
                 }
 
-                let isUpSwipe = invertVerticalDirection ? deltaY < 0 : deltaY > 0
-                guard isUpSwipe else {
-                    recordRejected(.wrongDirection, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                    return .ignored(.wrongDirection)
-                }
-
                 lastTriggerTimestamp = sample.timestamp
-                state = .completed
-                recordAccepted(startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                return .action(.maximize)
+                transitionToTriggered()
+                recordAccepted(startTimestamp: pending.candidate.startTimestamp, endTimestamp: sample.timestamp)
+                return .action(action)
             }
 
-            guard isHorizontalCandidate,
-                  absX >= absY * dominanceRatio else {
-                recordRejected(.diagonal, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                return .ignored(.diagonal)
-            }
-
-            guard !isCoolingDown(at: sample.timestamp) else {
-                state = .completed
-                recordRejected(.cooldown, startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-                return .ignored(.cooldown)
-            }
-
-            lastTriggerTimestamp = sample.timestamp
-            state = .completed
-            recordAccepted(startTimestamp: gesture.startTimestamp, endTimestamp: sample.timestamp)
-            let isRightSwipe = invertDirection ? deltaX < 0 : deltaX > 0
-            return .action(isRightSwipe ? .rightHalf : .leftHalf)
-
-        case .completed:
-            recordRejected(.alreadyTriggered, startTimestamp: nil, endTimestamp: sample.timestamp)
+        case .triggered:
             return .ignored(.alreadyTriggered)
+
+        case .canceled:
+            return .ignored(.fingerCountChanged)
         }
+    }
+
+    private func handleNonThreeFingerSample(_ sample: RawTouchSample) -> RawGestureRecognitionResult {
+        switch state {
+        case .idle:
+            diagnostics.recognizerState = .idle
+            return .ignored(.unsupportedFingerCount)
+
+        case .candidateThreeFinger(let candidate):
+            let reason = sample.activeTouchCount == 0
+                ? RawGestureIgnoredReason.liftedBeforeConfirmation
+                : RawGestureIgnoredReason.fingerCountChanged
+            transitionOrResetAfterPreTriggerCancel(reason: reason, activeTouchCount: sample.activeTouchCount)
+            recordRejected(reason, startTimestamp: candidate.startTimestamp, endTimestamp: sample.timestamp)
+            return .ignored(reason)
+
+        case .pendingTrigger(let pending):
+            let reason = sample.activeTouchCount == 0
+                ? RawGestureIgnoredReason.liftedBeforeConfirmation
+                : RawGestureIgnoredReason.fingerCountChangedBeforeConfirmation
+            transitionOrResetAfterPreTriggerCancel(reason: reason, activeTouchCount: sample.activeTouchCount)
+            recordRejected(reason, startTimestamp: pending.candidate.startTimestamp, endTimestamp: sample.timestamp)
+            return .ignored(reason)
+
+        case .triggered:
+            if sample.activeTouchCount == 0 {
+                resetSession()
+                return .ignored(.unsupportedFingerCount)
+            }
+            return .ignored(.alreadyTriggered)
+
+        case .canceled:
+            if sample.activeTouchCount == 0 {
+                resetSession()
+                return .ignored(.unsupportedFingerCount)
+            }
+            return .ignored(.fingerCountChanged)
+        }
+    }
+
+    private func evaluateAction(candidate: CandidateGesture, sample: RawTouchSample) -> ActionEvaluation {
+        let deltaX = sample.centroidX - candidate.startX
+        let deltaY = sample.centroidY - candidate.startY
+        let absX = abs(deltaX)
+        let absY = abs(deltaY)
+
+        let isHorizontalCandidate = absX >= minHorizontalDistance
+        let isVerticalCandidate = absY >= minVerticalDistance
+        guard isHorizontalCandidate || isVerticalCandidate else {
+            return .ignored(.belowThreshold)
+        }
+
+        if isVerticalCandidate,
+           absY >= absX * dominanceRatio {
+            let isUpSwipe = invertVerticalDirection ? deltaY < 0 : deltaY > 0
+            guard isUpSwipe else {
+                return .ignored(.wrongDirection)
+            }
+            return .action(.maximize)
+        }
+
+        guard isHorizontalCandidate,
+              absX >= absY * dominanceRatio else {
+            return .ignored(.diagonal)
+        }
+
+        let isRightSwipe = invertDirection ? deltaX < 0 : deltaX > 0
+        return .action(isRightSwipe ? .rightHalf : .leftHalf)
+    }
+
+    private func resetSession() {
+        state = .idle
+        diagnostics.recognizerState = .idle
+        diagnostics.candidateStartTouchCount = nil
+        diagnostics.candidateSampleCount = 0
+        diagnostics.candidateCanceledReason = nil
+        diagnostics.pendingAction = nil
+        diagnostics.thresholdCrossedTimestamp = nil
+    }
+
+    private func transitionOrResetAfterPreTriggerCancel(reason: RawGestureIgnoredReason, activeTouchCount: Int) {
+        if activeTouchCount == 0 {
+            state = .idle
+            diagnostics.recognizerState = .idle
+        } else {
+            state = .canceled
+            diagnostics.recognizerState = .canceled
+        }
+        diagnostics.candidateStartTouchCount = nil
+        diagnostics.candidateSampleCount = 0
+        diagnostics.candidateCanceledReason = reason
+        diagnostics.pendingAction = nil
+        diagnostics.thresholdCrossedTimestamp = nil
+    }
+
+    private func transitionToPending(_ pending: PendingTrigger) {
+        state = .pendingTrigger(pending)
+        diagnostics.recognizerState = .pendingTrigger
+        diagnostics.pendingAction = pending.action
+        diagnostics.thresholdCrossedTimestamp = pending.thresholdCrossedTimestamp
+        diagnostics.candidateStartTouchCount = 3
+        diagnostics.candidateSampleCount = pending.candidate.sampleCount
+        diagnostics.candidateCanceledReason = nil
+    }
+
+    private func transitionToTriggered() {
+        state = .triggered
+        diagnostics.recognizerState = .triggered
+        diagnostics.candidateStartTouchCount = nil
+        diagnostics.candidateSampleCount = 0
+        diagnostics.candidateCanceledReason = nil
+        diagnostics.pendingAction = nil
+        diagnostics.thresholdCrossedTimestamp = nil
+    }
+
+    private func transitionToCanceled(reason: RawGestureIgnoredReason) {
+        state = .canceled
+        diagnostics.recognizerState = .canceled
+        diagnostics.candidateStartTouchCount = nil
+        diagnostics.candidateSampleCount = 0
+        diagnostics.candidateCanceledReason = reason
+        diagnostics.pendingAction = nil
+        diagnostics.thresholdCrossedTimestamp = nil
     }
 
     private func isCoolingDown(at timestamp: TimeInterval) -> Bool {
@@ -227,6 +439,7 @@ public final class RawThreeFingerSwipeRecognizer {
     }
 
     private func recordAccepted(startTimestamp: TimeInterval, endTimestamp: TimeInterval) {
+        diagnostics.lastAcceptedActiveTouchCount = 3
         diagnostics.lastGestureStartTimestamp = startTimestamp
         diagnostics.lastGestureEndTimestamp = endTimestamp
         diagnostics.lastGestureDuration = endTimestamp - startTimestamp

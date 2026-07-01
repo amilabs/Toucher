@@ -77,6 +77,50 @@ final class GestureActionIntegrationTests: XCTestCase {
         XCTAssertTrue(windows.movedFrames.isEmpty)
     }
 
+    func testPublicScrollWheelDiagnosticsDoNotDispatchActionsInRawMode() {
+        let diagnostics = GestureDiagnosticState()
+        let publicRecognizer = HorizontalSwipeRecognizer()
+        let rawRecognizer = RawThreeFingerSwipeRecognizer(
+            minHorizontalDistance: 10,
+            dominanceRatio: 2,
+            maxGestureDuration: 0.8,
+            cooldown: 0.35
+        )
+        let windows = MockGestureWindowController(
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(
+            permissions: MockGesturePermissionChecker(hasAccessibilityPermission: true),
+            windows: windows
+        )
+        let scrollEvent = PublicGestureEventInput(
+            type: .scrollWheel,
+            timestamp: 1,
+            deltaX: -120,
+            deltaY: 0,
+            scrollingDeltaX: -120,
+            scrollingDeltaY: 0,
+            phase: "changed"
+        )
+
+        diagnostics.record(scrollEvent)
+        if let recognition = publicRecognizer.recognize(publicEvent: scrollEvent),
+           case .action(let action) = recognition {
+            _ = handler.perform(action)
+        }
+        let rawResult = rawRecognizer.recognize(
+            RawTouchSample(activeTouchCount: 2, centroidX: 20, centroidY: 100, timestamp: 1)
+        )
+        if case .action(let action) = rawResult {
+            _ = handler.perform(action)
+        }
+
+        XCTAssertEqual(diagnostics.snapshot.counters.scrollWheel, 1)
+        XCTAssertEqual(rawResult, .ignored(.unsupportedFingerCount))
+        XCTAssertTrue(windows.movedFrames.isEmpty)
+    }
+
     func testRawGestureActionUsesSameCommandPathAsHotKeyAction() {
         let recognizer = RawThreeFingerSwipeRecognizer(
             minHorizontalDistance: 10,
@@ -93,15 +137,19 @@ final class GestureActionIntegrationTests: XCTestCase {
             windows: windows
         )
 
-        _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 100, timestamp: 1))
+        let pendingRecognition = driveRawLeftToPending(recognizer)
+        if case .action(let action) = pendingRecognition {
+            _ = handler.perform(action)
+        }
         let recognition = recognizer.recognize(
-            RawTouchSample(activeTouchCount: 3, centroidX: 70, centroidY: 100, timestamp: 1.1)
+            RawTouchSample(activeTouchCount: 3, centroidX: 60, centroidY: 100, timestamp: 1.14)
         )
 
         guard case .action(let action) = recognition else {
             return XCTFail("Expected raw gesture action")
         }
 
+        XCTAssertTrue(windows.movedFrames.isEmpty)
         XCTAssertEqual(handler.perform(action), .moved(Rect(x: 0, y: 0, width: 600, height: 800)))
         XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 600, height: 800)])
     }
@@ -122,15 +170,19 @@ final class GestureActionIntegrationTests: XCTestCase {
             windows: windows
         )
 
-        _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 100, timestamp: 1))
+        let pendingRecognition = driveRawUpToPending(recognizer)
+        if case .action(let action) = pendingRecognition {
+            _ = handler.perform(action)
+        }
         let recognition = recognizer.recognize(
-            RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 130, timestamp: 1.1)
+            RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 140, timestamp: 1.14)
         )
 
         guard case .action(let action) = recognition else {
             return XCTFail("Expected raw up gesture action")
         }
 
+        XCTAssertTrue(windows.movedFrames.isEmpty)
         XCTAssertEqual(action, .maximize)
         XCTAssertEqual(handler.perform(action), .moved(Rect(x: 0, y: 0, width: 1200, height: 800)))
         XCTAssertEqual(windows.movedFrames, [Rect(x: 0, y: 0, width: 1200, height: 800)])
@@ -169,6 +221,73 @@ final class GestureActionIntegrationTests: XCTestCase {
         XCTAssertNoThrow(backend.start())
         XCTAssertFalse(backend.isActive)
     }
+
+    func testPendingRawGestureDoesNotMoveWindow() {
+        let recognizer = RawThreeFingerSwipeRecognizer(
+            minHorizontalDistance: 10,
+            dominanceRatio: 2,
+            maxGestureDuration: 0.8,
+            cooldown: 0.35
+        )
+        let windows = MockGestureWindowController(
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(
+            permissions: MockGesturePermissionChecker(hasAccessibilityPermission: true),
+            windows: windows
+        )
+
+        let recognition = driveRawLeftToPending(recognizer)
+        if case .action(let action) = recognition {
+            _ = handler.perform(action)
+        }
+
+        XCTAssertEqual(recognition, .ignored(.tracking))
+        XCTAssertTrue(windows.movedFrames.isEmpty)
+    }
+
+    func testCanceledPendingRawGestureDoesNotMoveWindow() {
+        let recognizer = RawThreeFingerSwipeRecognizer(
+            minHorizontalDistance: 10,
+            dominanceRatio: 2,
+            maxGestureDuration: 0.8,
+            cooldown: 0.35
+        )
+        let windows = MockGestureWindowController(
+            currentFrame: Rect(x: 100, y: 100, width: 500, height: 400),
+            visibleFrame: Rect(x: 0, y: 0, width: 1200, height: 800)
+        )
+        let handler = WindowCommandHandler(
+            permissions: MockGesturePermissionChecker(hasAccessibilityPermission: true),
+            windows: windows
+        )
+
+        _ = driveRawLeftToPending(recognizer)
+        let recognition = recognizer.recognize(
+            RawTouchSample(activeTouchCount: 2, centroidX: 60, centroidY: 100, timestamp: 1.08)
+        )
+        if case .action(let action) = recognition {
+            _ = handler.perform(action)
+        }
+
+        XCTAssertEqual(recognition, .ignored(.fingerCountChangedBeforeConfirmation))
+        XCTAssertTrue(windows.movedFrames.isEmpty)
+    }
+}
+
+private func driveRawLeftToPending(_ recognizer: RawThreeFingerSwipeRecognizer) -> RawGestureRecognitionResult {
+    _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 100, timestamp: 1.00))
+    _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 98, centroidY: 100, timestamp: 1.02))
+    _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 96, centroidY: 100, timestamp: 1.04))
+    return recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 70, centroidY: 100, timestamp: 1.06))
+}
+
+private func driveRawUpToPending(_ recognizer: RawThreeFingerSwipeRecognizer) -> RawGestureRecognitionResult {
+    _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 100, timestamp: 1.00))
+    _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 102, timestamp: 1.02))
+    _ = recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 104, timestamp: 1.04))
+    return recognizer.recognize(RawTouchSample(activeTouchCount: 3, centroidX: 100, centroidY: 130, timestamp: 1.06))
 }
 
 private struct MockGesturePermissionChecker: PermissionChecking {

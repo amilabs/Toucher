@@ -832,6 +832,7 @@ private extension AppDelegate {
             _ = commandHandler
             _ = performWindowAction(action, screenTarget: currentModifierScreenTarget())
         case .ignored(let reason):
+            let rawDiagnostics = rawGestureRecognizer.diagnostics
             if reason == .fingerCountChanged || reason == .unsupportedFingerCount {
                 lastRawGestureStartX = nil
                 lastRawGestureStartY = nil
@@ -840,10 +841,16 @@ private extension AppDelegate {
             if reason == .unsupportedFingerCount {
                 rawUnsupportedFingerCountCount += 1
             }
-            if reason == .fingerCountChanged {
+            let isFreshRejection = rawDiagnostics.lastGestureEndTimestamp == sample.timestamp
+            let isCancellationEvent = isFreshRejection
+                && rawDiagnostics.candidateCanceledReason != nil
+            if reason == .fingerCountChanged && isCancellationEvent {
                 rawCanceledGesturesCount += 1
             }
-            if sample.activeTouchCount == 3 || reason == .fingerCountChanged {
+            let isCandidateThreeFingerEvent = sample.activeTouchCount == 3
+                && (rawDiagnostics.recognizerState == .candidateThreeFinger
+                    || rawDiagnostics.recognizerState == .pendingTrigger)
+            if isCandidateThreeFingerEvent || isCancellationEvent {
                 appendRawEvent(sample: sample, result: reason.rawValue)
             }
             lastRawGestureIgnoredReasonDescription = reason.rawValue
@@ -1988,6 +1995,15 @@ private final class GestureProbeWindowController: NSObject, NSWindowDelegate {
         Active touches: \(rawStatus.activeTouches)
 
         Gesture timing:
+        recognizer state: \(rawDiagnostics.recognizerState.rawValue)
+        current active touch count: \(rawDiagnostics.currentActiveTouchCount)
+        candidate start touch count: \(rawDiagnostics.candidateStartTouchCount.map(String.init) ?? "none")
+        candidate sample count: \(rawDiagnostics.candidateSampleCount)
+        candidate canceled reason: \(rawDiagnostics.candidateCanceledReason?.rawValue ?? "none")
+        pending action: \(rawDiagnostics.pendingAction?.debugName ?? "none")
+        threshold crossed at: \(renderTime(rawDiagnostics.thresholdCrossedTimestamp))
+        confirmation delay: \(String(format: "%.3f", rawDiagnostics.confirmationDelay))
+        last accepted active touch count: \(rawDiagnostics.lastAcceptedActiveTouchCount.map(String.init) ?? "none")
         minHorizontalDistance: \(String(format: "%.3f", rawDiagnostics.minHorizontalDistance))
         minVerticalDistance: \(String(format: "%.3f", rawDiagnostics.minVerticalDistance))
         dominanceRatio: \(String(format: "%.3f", rawDiagnostics.dominanceRatio))
